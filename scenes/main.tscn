@@ -10,6 +10,7 @@
 script = ExtResource("1_match")
 
 [node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(160, 120)
 
 [node name="Pitch" type="Node2D" parent="."]
 
