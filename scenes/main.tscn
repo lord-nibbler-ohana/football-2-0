@@ -1,0 +1,38 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/match.gd" id="1_match"]
+[ext_resource type="Script" path="res://scripts/team.gd" id="2_team"]
+[ext_resource type="PackedScene" path="res://scenes/ball.tscn" id="3_ball"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_match")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+
+[node name="Pitch" type="Node2D" parent="."]
+
+[node name="PitchSprite" type="Sprite2D" parent="Pitch"]
+
+[node name="Ball" parent="." instance=ExtResource("3_ball")]
+
+[node name="TeamHome" type="Node2D" parent="."]
+script = ExtResource("2_team")
+team_name = "Home"
+is_home = true
+
+[node name="TeamAway" type="Node2D" parent="."]
+script = ExtResource("2_team")
+team_name = "Away"
+is_home = false
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Scoreboard" type="Label" parent="UI"]
+offset_left = 10.0
+offset_top = 5.0
+text = "0 - 0"
+
+[node name="Clock" type="Label" parent="UI"]
+offset_left = 250.0
+offset_top = 5.0
+text = "00:00"

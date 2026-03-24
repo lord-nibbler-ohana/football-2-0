@@ -1,0 +1,5 @@
+[gd_scene format=3]
+
+[node name="Pitch" type="Node2D"]
+
+[node name="PitchSprite" type="Sprite2D" parent="."]
