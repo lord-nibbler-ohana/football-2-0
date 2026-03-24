@@ -1,6 +1,8 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/goal.gd" id="1_goal"]
+[ext_resource type="Texture2D" path="res://sprites/pitch/goal_left.png" id="2_goal_left"]
+[ext_resource type="Texture2D" path="res://sprites/pitch/goal_right.png" id="3_goal_right"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_mouth"]
 size = Vector2(6, 48)
@@ -13,6 +15,8 @@ size = Vector2(3, 3)
 
 [node name="Goal" type="Node2D"]
 script = ExtResource("1_goal")
+
+[node name="GoalSprite" type="Sprite2D" parent="."]
 
 [node name="GoalArea" type="Area2D" parent="."]
 collision_layer = 8

@@ -41,37 +41,82 @@ Kit colors A (#FF0000) and B (#0000FF) are swapped between variants to create st
 
 Cell size: 16×32 pixels, 10 columns per row.
 
-Sprites are extracted in reading order from the original sheets. The original Amiga
-layout organizes sprites as:
+Sprites are extracted in reading order (top-to-bottom, left-to-right) from the original sheets.
 
-- **Row 0 (cells 0-19):** Upright sprites — running and kicking in multiple directions
-  (with ground shadows included in the sprite). Cells 0-13 are standard running/standing
-  poses (~12px wide). Cells 14-19 are wider kick/header poses (~14-15px wide).
-- **Rows 2-8 (cells 20-71):** Slide tackle and ground-level sprites, organized by
-  direction. Each band of 6 sprites covers one direction with 3 slide frames (left group)
-  and 3 recovering/getting-up frames (right group). Band 1 also has 4 extra small frames
-  (cells 26-29) which appear to be celebration/knocked-down sprites.
-
-### Band layout (rows 2-8, 8 directions)
-
-| Band | Cells | Direction | Left group (3) | Right group (3) |
-|------|-------|-----------|----------------|-----------------|
-| 1 | 20-29 | S (facing down) | Slide frames | Recover + extras |
-| 2 | 30-35 | SE | Slide frames | Recover frames |
-| 3 | 36-41 | E (facing right) | Slide frames | Recover frames |
-| 4 | 42-47 | NE | Slide frames | Recover frames |
-| 5 | 48-53 | N (facing up) | Slide frames | Recover frames |
-| 6 | 54-59 | NW (mirror of NE) | Slide frames | Recover frames |
-| 7 | 60-65 | W (mirror of E) | Slide frames | Recover frames |
-| 8 | 66-71 | SW (mirror of SE) | Slide frames | Recover frames |
-
-> **Note:** SW/W/NW directions are stored explicitly in the original sheets but
-> can also be generated at runtime by mirroring SE/E/NE with `flip_h = true`.
-
-### Player shadow
-
-`player_shadow.png` — Separate 16×8 semi-transparent ellipse for rendering
-under each player independently of the sprite frame.
+| Cell | Source Position | Size | Notes |
+|------|----------------|------|-------|
+|  0 | (0,0) | 12×31 | top |
+|  1 | (16,0) | 13×31 | top |
+|  2 | (32,0) | 11×31 | top |
+|  3 | (48,0) | 12×31 | top |
+|  4 | (64,0) | 11×31 | top |
+|  5 | (80,0) | 12×31 | top |
+|  6 | (96,0) | 10×31 | top |
+|  7 | (112,0) | 11×31 | top |
+|  8 | (128,0) | 10×31 | top |
+|  9 | (144,0) | 11×31 | top |
+| 10 | (160,0) | 9×31 | top |
+| 11 | (176,0) | 11×31 | top |
+| 12 | (192,0) | 10×31 | top |
+| 13 | (208,0) | 12×31 | top |
+| 14 | (224,0) | 15×25 | top |
+| 15 | (240,0) | 15×26 | top |
+| 16 | (256,0) | 14×28 | top |
+| 17 | (272,0) | 14×29 | top |
+| 18 | (288,0) | 14×29 | top |
+| 19 | (304,0) | 14×28 | top |
+| 20 | (0,32) | 15×15 | band1 |
+| 21 | (16,32) | 15×17 | band1 |
+| 22 | (32,32) | 16×18 | band1 |
+| 23 | (64,32) | 11×18 | band1 |
+| 24 | (80,32) | 11×19 | band1 |
+| 25 | (96,32) | 11×15 | band1 |
+| 26 | (112,32) | 12×12 | band1 |
+| 27 | (128,32) | 13×12 | band1 |
+| 28 | (144,32) | 12×12 | band1 |
+| 29 | (160,32) | 13×12 | band1 |
+| 30 | (0,56) | 15×15 | band2 |
+| 31 | (16,56) | 15×17 | band2 |
+| 32 | (32,56) | 16×18 | band2 |
+| 33 | (64,56) | 11×18 | band2 |
+| 34 | (80,56) | 11×19 | band2 |
+| 35 | (96,56) | 11×14 | band2 |
+| 36 | (0,80) | 9×16 | band3 |
+| 37 | (16,80) | 11×18 | band3 |
+| 38 | (32,80) | 14×19 | band3 |
+| 39 | (64,80) | 10×18 | band3 |
+| 40 | (80,80) | 9×19 | band3 |
+| 41 | (96,80) | 8×15 | band3 |
+| 42 | (0,104) | 10×16 | band4 |
+| 43 | (16,104) | 11×18 | band4 |
+| 44 | (32,104) | 15×19 | band4 |
+| 45 | (64,104) | 9×18 | band4 |
+| 46 | (80,104) | 10×19 | band4 |
+| 47 | (96,104) | 11×15 | band4 |
+| 48 | (0,128) | 11×16 | band5 |
+| 49 | (16,128) | 13×18 | band5 |
+| 50 | (32,128) | 16×19 | band5 |
+| 51 | (64,128) | 8×18 | band5 |
+| 52 | (80,128) | 9×19 | band5 |
+| 53 | (96,128) | 11×15 | band5 |
+| 54 | (0,152) | 12×16 | band6 |
+| 55 | (16,152) | 14×18 | band6 |
+| 56 | (32,152) | 16×19 | band6 |
+| 57 | (64,152) | 10×18 | band6 |
+| 58 | (80,152) | 9×19 | band6 |
+| 59 | (96,152) | 8×15 | band6 |
+| 60 | (0,176) | 11×16 | band7 |
+| 61 | (16,176) | 13×18 | band7 |
+| 62 | (32,176) | 16×19 | band7 |
+| 63 | (64,176) | 8×18 | band7 |
+| 64 | (80,176) | 9×19 | band7 |
+| 65 | (96,176) | 11×15 | band7 |
+| 66 | (0,200) | 12×16 | band8 |
+| 67 | (16,200) | 14×18 | band8 |
+| 68 | (32,200) | 16×19 | band8 |
+| 69 | (64,200) | 10×18 | band8 |
+| 70 | (80,200) | 9×19 | band8 |
+| 71 | (96,200) | 8×15 | band8 |
 
 ## Ball Sprites
 
@@ -83,9 +128,11 @@ under each player independently of the sprite frame.
 
 ## Pitch
 
-`pitch/pitch.png` — 320×480 full pitch with markings, two-tone grass stripes, penalty areas, center circle.
+`pitch/pitch.png` — 320×240 horizontal pitch with goals on left/right edges,
+two-tone grass stripes, penalty areas, 6-yard boxes, center circle, penalty spots.
 
-`pitch/goal_net.png` — 32×40 goal with white posts and semi-transparent net pattern.
+`pitch/goal_left.png` — 12×52 left goal (posts + semi-transparent net, extending left).
+`pitch/goal_right.png` — 12×52 right goal (mirrored).
 
 ## Palette Swap Shader
 

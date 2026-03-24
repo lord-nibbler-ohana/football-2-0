@@ -270,139 +270,128 @@ def create_ball_shadow():
     return Image.fromarray(shadow, "RGBA")
 
 
-def create_goal_sprite():
-    """Create goal post and net sprites.
+def create_goal_sprites():
+    """Create left and right goal sprites.
 
-    Goal is ~24px wide, ~32px tall in Sensible Soccer scale.
-    White posts with simple net pattern.
+    Goals are vertical (posts top/bottom, net extending behind goal line).
+    Goal mouth spans 48px vertically, depth ~6px.
+    Returns (left_goal, right_goal) as PIL Images.
     """
-    w, h = 32, 40
+    w, h = 12, 52
     goal = np.zeros((h, w, 4), dtype=np.uint8)
 
-    post_color = [255, 255, 255, 255]  # white
-    net_color = [200, 200, 200, 96]    # semi-transparent light gray
-    crossbar_y = 8
+    post_color = [255, 255, 255, 255]
+    net_color = [180, 180, 180, 80]
 
-    # Left post (x=2, from crossbar down)
-    for y in range(crossbar_y, h - 2):
-        goal[y, 2] = post_color
-        goal[y, 3] = post_color
+    # Back bar at x=6
+    for y in range(2, h - 2):
+        goal[y, 6] = post_color
 
-    # Right post (x=w-4, from crossbar down)
-    for y in range(crossbar_y, h - 2):
-        goal[y, w - 4] = post_color
-        goal[y, w - 3] = post_color
+    # Top post (horizontal)
+    for x in range(0, 7):
+        goal[2, x] = post_color
 
-    # Crossbar
-    for x in range(2, w - 2):
-        goal[crossbar_y, x] = post_color
-        goal[crossbar_y + 1, x] = post_color
+    # Bottom post (horizontal)
+    for x in range(0, 7):
+        goal[h - 3, x] = post_color
 
-    # Net (behind posts, simple grid pattern)
-    for y in range(crossbar_y + 2, h - 2):
-        for x in range(4, w - 4):
+    # Net pattern
+    for y in range(3, h - 3):
+        for x in range(0, 6):
             if (x + y) % 3 == 0:
                 goal[y, x] = net_color
 
-    return Image.fromarray(goal, "RGBA")
+    left_img = Image.fromarray(goal, "RGBA")
+    right_img = left_img.transpose(Image.FLIP_LEFT_RIGHT)
+    return left_img, right_img
 
 
 def create_pitch_background():
-    """Create a simple pitch background with markings.
+    """Create a horizontal pitch background with markings.
 
-    Pitch at 320x240 viewport, with center circle, halfway line,
-    penalty areas, and corner arcs.
+    Goals are at left (x=0) and right (x=320) edges.
+    Viewport: 320x240.
     """
-    w, h = 320, 480  # full pitch (scrolls vertically)
+    import math
 
-    # Two-tone grass
+    w, h = 320, 240
+
     pitch = np.zeros((h, w, 4), dtype=np.uint8)
-    stripe_h = 24
-    for y in range(h):
-        stripe = (y // stripe_h) % 2
+    stripe_w = 20  # vertical stripes for horizontal pitch
+    for x in range(w):
+        stripe = (x // stripe_w) % 2
         if stripe == 0:
-            pitch[y, :] = [51, 102, 0, 255]   # darker green #336600
+            pitch[:, x] = [51, 102, 0, 255]
         else:
-            pitch[y, :] = [58, 115, 0, 255]   # slightly lighter
+            pitch[:, x] = [58, 115, 0, 255]
 
     line_color = [255, 255, 255, 255]
-
-    # Pitch boundaries
-    margin_x, margin_y = 16, 16
+    margin_x, margin_y = 8, 8
     px1, py1 = margin_x, margin_y
     px2, py2 = w - margin_x - 1, h - margin_y - 1
 
-    # Boundary lines (2px wide)
-    for t in range(2):
-        # Top and bottom
-        for x in range(px1, px2 + 1):
-            pitch[py1 + t, x] = line_color
-            pitch[py2 - t, x] = line_color
-        # Left and right
-        for y in range(py1, py2 + 1):
-            pitch[y, px1 + t] = line_color
-            pitch[y, px2 - t] = line_color
+    # Boundary lines
+    for x in range(px1, px2 + 1):
+        pitch[py1, x] = line_color
+        pitch[py2, x] = line_color
+    for y in range(py1, py2 + 1):
+        pitch[y, px1] = line_color
+        pitch[y, px2] = line_color
 
-    # Halfway line
-    mid_y = h // 2
-    for t in range(2):
-        for x in range(px1, px2 + 1):
-            pitch[mid_y + t, x] = line_color
+    # Halfway line (vertical, center)
+    cx = w // 2
+    cy = h // 2
+    for y in range(py1, py2 + 1):
+        pitch[y, cx] = line_color
 
-    # Center circle (radius ~30px)
-    cx, cy = w // 2, h // 2
-    radius = 30
+    # Center circle (radius ~24px)
+    radius = 24
     for angle_deg in range(360):
-        import math
         rad = math.radians(angle_deg)
-        for r in [radius, radius + 1]:
-            dx = int(round(r * math.cos(rad)))
-            dy = int(round(r * math.sin(rad)))
-            px, py = cx + dx, cy + dy
-            if 0 <= px < w and 0 <= py < h:
-                pitch[py, px] = line_color
+        dx = int(round(radius * math.cos(rad)))
+        dy = int(round(radius * math.sin(rad)))
+        px, py = cx + dx, cy + dy
+        if 0 <= px < w and 0 <= py < h:
+            pitch[py, px] = line_color
 
     # Center spot
     for dy in range(-1, 2):
         for dx in range(-1, 2):
-            pitch[cy + dy, cx + dx] = line_color
+            if abs(dx) + abs(dy) <= 1:
+                pitch[cy + dy, cx + dx] = line_color
 
-    # Penalty areas (top and bottom)
-    pa_w = 120  # penalty area width
-    pa_h = 60   # penalty area depth
-    for goal_y, direction in [(py1, 1), (py2, -1)]:
-        pa_x1 = cx - pa_w // 2
-        pa_x2 = cx + pa_w // 2
-        pa_y_end = goal_y + direction * pa_h
+    # Penalty areas (left and right)
+    pa_h = 100
+    pa_w = 48
+    pa_top = cy - pa_h // 2
+    pa_bottom = cy + pa_h // 2
 
-        for t in range(2):
-            # Horizontal line
-            for x in range(pa_x1, pa_x2 + 1):
-                pitch[pa_y_end + t * direction, x] = line_color
-            # Vertical lines
-            for y in range(min(goal_y, pa_y_end), max(goal_y, pa_y_end) + 1):
-                pitch[y, pa_x1 + t] = line_color
-                pitch[y, pa_x2 - t] = line_color
+    for goal_x, direction in [(px1, 1), (px2, -1)]:
+        pa_x_end = goal_x + direction * pa_w
+        for x in range(min(goal_x, pa_x_end), max(goal_x, pa_x_end) + 1):
+            pitch[pa_top, x] = line_color
+            pitch[pa_bottom, x] = line_color
+        for y in range(pa_top, pa_bottom + 1):
+            pitch[y, pa_x_end] = line_color
 
         # Goal area (6-yard box)
-        ga_w = 60
-        ga_h = 24
-        ga_x1 = cx - ga_w // 2
-        ga_x2 = cx + ga_w // 2
-        ga_y_end = goal_y + direction * ga_h
-
-        for t in range(2):
-            for x in range(ga_x1, ga_x2 + 1):
-                pitch[ga_y_end + t * direction, x] = line_color
-            for y in range(min(goal_y, ga_y_end), max(goal_y, ga_y_end) + 1):
-                pitch[y, ga_x1 + t] = line_color
-                pitch[y, ga_x2 - t] = line_color
+        ga_h = 48
+        ga_w = 20
+        ga_top = cy - ga_h // 2
+        ga_bottom = cy + ga_h // 2
+        ga_x_end = goal_x + direction * ga_w
+        for x in range(min(goal_x, ga_x_end), max(goal_x, ga_x_end) + 1):
+            pitch[ga_top, x] = line_color
+            pitch[ga_bottom, x] = line_color
+        for y in range(ga_top, ga_bottom + 1):
+            pitch[y, ga_x_end] = line_color
 
         # Penalty spot
-        spot_y = goal_y + direction * 44
+        spot_x = goal_x + direction * 36
         for dy in range(-1, 2):
             for dx in range(-1, 2):
-                pitch[spot_y + dy, cx + dx] = line_color
+                if abs(dx) + abs(dy) <= 1:
+                    pitch[cy + dy, spot_x + dx] = line_color
 
     return Image.fromarray(pitch, "RGBA")
 
@@ -459,11 +448,14 @@ def main():
     ball_shadow.save(shadow_path)
     print(f"  → Saved {shadow_path} ({ball_shadow.size[0]}x{ball_shadow.size[1]})")
 
-    print("\n=== Creating goal sprite ===")
-    goal = create_goal_sprite()
-    goal_path = os.path.join(PITCH_DIR, "goal_net.png")
-    goal.save(goal_path)
-    print(f"  → Saved {goal_path} ({goal.size[0]}x{goal.size[1]})")
+    print("\n=== Creating goal sprites ===")
+    goal_left, goal_right = create_goal_sprites()
+    goal_left_path = os.path.join(PITCH_DIR, "goal_left.png")
+    goal_right_path = os.path.join(PITCH_DIR, "goal_right.png")
+    goal_left.save(goal_left_path)
+    goal_right.save(goal_right_path)
+    print(f"  → Saved {goal_left_path} ({goal_left.size[0]}x{goal_left.size[1]})")
+    print(f"  → Saved {goal_right_path} ({goal_right.size[0]}x{goal_right.size[1]})")
 
     print("\n=== Creating pitch background ===")
     pitch = create_pitch_background()

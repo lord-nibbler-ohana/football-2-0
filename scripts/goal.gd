@@ -8,6 +8,10 @@ signal goal_detected(side: String)
 @onready var goal_area: Area2D = $GoalArea
 @onready var top_post: StaticBody2D = $TopPost
 @onready var bottom_post: StaticBody2D = $BottomPost
+@onready var goal_sprite: Sprite2D = $GoalSprite
+
+var _goal_left_tex := preload("res://sprites/pitch/goal_left.png")
+var _goal_right_tex := preload("res://sprites/pitch/goal_right.png")
 
 
 func _ready() -> void:
@@ -16,9 +20,11 @@ func _ready() -> void:
 	if is_left_goal:
 		goal_x = GoalDetectionPure.GOAL_LEFT_X
 		area_offset_x = -GoalDetectionPure.GOAL_DEPTH / 2.0
+		goal_sprite.texture = _goal_left_tex
 	else:
 		goal_x = GoalDetectionPure.GOAL_RIGHT_X
 		area_offset_x = GoalDetectionPure.GOAL_DEPTH / 2.0
+		goal_sprite.texture = _goal_right_tex
 
 	var mouth_center_y := (GoalDetectionPure.GOAL_MOUTH_TOP + GoalDetectionPure.GOAL_MOUTH_BOTTOM) / 2.0
 
@@ -28,6 +34,9 @@ func _ready() -> void:
 	# Position posts at the edges of the goal mouth
 	top_post.position = Vector2(goal_x, GoalDetectionPure.GOAL_MOUTH_TOP)
 	bottom_post.position = Vector2(goal_x, GoalDetectionPure.GOAL_MOUTH_BOTTOM)
+
+	# Position goal sprite centered on the goal mouth
+	goal_sprite.position = Vector2(goal_x, mouth_center_y)
 
 	# Add posts to goalpost group for collision detection
 	top_post.add_to_group("goalpost")

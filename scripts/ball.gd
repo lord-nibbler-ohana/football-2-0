@@ -6,6 +6,7 @@ signal post_hit
 var physics: BallPhysicsPure
 var aftertouch: AftertouchPure
 var last_kicker: Node = null
+var _rotation_accum: float = 0.0
 
 @onready var ball_sprite: Sprite2D = $BallSprite
 @onready var shadow_sprite: Sprite2D = $ShadowSprite
@@ -49,15 +50,14 @@ func _physics_process(_delta: float) -> void:
 	# Update visuals
 	ball_sprite.position.y = physics.get_sprite_offset_y()
 	shadow_sprite.modulate.a = physics.get_shadow_opacity()
-	queue_redraw()
 
-
-func _draw() -> void:
-	# Debug visuals until real sprites are added
-	var shadow_alpha := physics.get_shadow_opacity() if physics else 1.0
-	draw_circle(Vector2.ZERO, 4, Color(0, 0, 0, shadow_alpha * 0.5))
-	var offset_y := physics.get_sprite_offset_y() if physics else 0.0
-	draw_circle(Vector2(0, offset_y), 4, Color.WHITE)
+	# Cycle ball rotation frame based on distance traveled
+	var speed := physics.velocity.length()
+	if speed > 0.5:
+		_rotation_accum += speed
+		if _rotation_accum > 4.0:
+			_rotation_accum = 0.0
+			ball_sprite.frame = (ball_sprite.frame + 1) % 3
 
 
 ## Kick the ball with a ground velocity and optional upward velocity.
