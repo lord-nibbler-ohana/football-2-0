@@ -14,7 +14,7 @@ First, fetch all project items to understand what has already been planned:
 gh project item-list 2 --owner lord-nibbler-ohana --format json --limit 100
 ```
 
-From the results, identify ALL items with **Status = "Planned"** and the **"core"** label. For each planned issue, read its full details:
+From the results, identify ALL items with **Status = "Planned"**. For each planned issue, read its full details:
 
 ```bash
 gh issue view <issue-number> --repo lord-nibbler-ohana/football-2-0 --json title,body,labels,comments
@@ -22,13 +22,13 @@ gh issue view <issue-number> --repo lord-nibbler-ohana/football-2-0 --json title
 
 Take note of the implementation plans and decisions in these planned issues — the new plan must be consistent and aligned with them.
 
-### Step 2: Pick the next "Todo" core issue
+### Step 2: Pick the next "Todo" issue
 
-From the same project items list, find all items with **Status = "Todo"** and the **"core"** label.
+From the same project items list, find all items with **Status = "Todo"** (regardless of labels).
 
 Pick issues in **natural order by issue number** (lowest number first) — this ensures features are planned in the logical sequence they were created.
 
-If no core issues are in Todo status, tell the user there are no core issues left to plan.
+If no issues are in Todo status, tell the user there are no issues left to plan.
 
 Read the full issue details:
 
@@ -56,7 +56,7 @@ Ensure the plan is **aligned and consistent** with all already-planned core issu
 
 ### Step 4: Check and update existing planned issues if needed
 
-If during planning you discover that any already-planned core issues need updates to stay consistent (e.g., interface changes, new dependencies, revised assumptions), update those issues too:
+If during planning you discover that any already-planned issues need updates to stay consistent (e.g., interface changes, new dependencies, revised assumptions), update those issues too:
 
 ```bash
 gh issue edit <issue-number> --repo lord-nibbler-ohana/football-2-0 --body "<updated body>"
@@ -92,10 +92,34 @@ Get the item ID for this issue from the project items list (from Step 1), then u
 gh project item-edit --project-id PVT_kwHOD6rHrM4BSrnu --id <ITEM_ID> --field-id PVTSSF_lAHOD6rHrM4BSrnuzhAJPCc --single-select-option-id 31442027
 ```
 
-### Step 7: Report back
+### Step 7: Implement the plan
+
+Exit Plan Mode and implement the feature according to the plan created in Step 3. Follow the implementation order from the plan. After implementation:
+
+- Run syntax checks on all modified/created `.gd` files
+- Run relevant tests to verify the implementation works
+- Fix any issues found during validation
+
+### Step 8: Change status to "Done"
+
+Update the project item status to "Done" after successful implementation:
+
+```bash
+gh project item-edit --project-id PVT_kwHOD6rHrM4BSrnu --id <ITEM_ID> --field-id PVTSSF_lAHOD6rHrM4BSrnuzhAJPCc --single-select-option-id 98236657
+```
+
+Add a comment to the issue confirming implementation:
+
+```bash
+gh issue comment <issue-number> --repo lord-nibbler-ohana/football-2-0 --body "Implementation completed by Claude Code."
+```
+
+### Step 9: Report back
 
 Tell the user:
-- Which issue was planned (number + title + link)
+- Which issue was planned and implemented (number + title + link)
 - A brief summary of the plan
+- What was implemented (files created/modified)
 - Whether any existing planned issues were updated (and what changed)
-- Confirm the status was changed to Planned
+- Test results
+- Confirm the status was changed to Done
