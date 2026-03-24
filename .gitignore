@@ -1,0 +1,27 @@
+# Godot
+.godot/
+.import/
+*.import
+
+# Export
+export/
+*.pck
+*.zip
+
+# Testing
+test_screenshots/
+test_results.xml
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+*~
+
+# IDE
+.vscode/
+*.swp

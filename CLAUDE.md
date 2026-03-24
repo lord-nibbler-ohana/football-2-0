@@ -13,6 +13,8 @@ Football 2.0 is a Godot 4.x game (GDScript) recreating Sensible Soccer's core me
 - **Binary:** `godot` on PATH (or set `GODOT_PATH` env var)
 - **Physics tick rate:** 50 Hz (PAL Amiga framerate — all physics constants are tuned for this)
 - **Viewport:** 320×240, window 1280×960, stretch mode "viewport", texture filter NEAREST
+- **Testing:** GUT (addons/gut/) — headless CLI test runner
+- **Linting:** gdtoolkit (`gdformat`, `gdlint`) — installed via pip
 
 ## Project Structure
 
