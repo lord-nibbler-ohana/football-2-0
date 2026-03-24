@@ -1,0 +1,62 @@
+class_name MatchStatePure
+extends RefCounted
+## Pure match state machine — no Node/scene tree dependencies.
+## Tracks match state, score, and celebration timers.
+
+enum State { PRE_MATCH, PLAYING, GOAL_SCORED, KICKOFF_SETUP }
+
+const GOAL_CELEBRATION_TIME := 2.0
+
+var state: int = State.PRE_MATCH
+var score_home: int = 0
+var score_away: int = 0
+var goal_pause_timer: float = 0.0
+var last_goal_team: String = ""
+
+
+## Start the match — transition to PLAYING.
+func start_play() -> void:
+	state = State.PLAYING
+
+
+## Record a goal scored in the given side ("left" or "right").
+## Left goal = away team scores, right goal = home team scores.
+func record_goal(side: String) -> void:
+	if side == "left":
+		score_away += 1
+		last_goal_team = "away"
+	elif side == "right":
+		score_home += 1
+		last_goal_team = "home"
+	state = State.GOAL_SCORED
+	goal_pause_timer = GOAL_CELEBRATION_TIME
+
+
+## Advance the state machine by one frame.
+func tick(delta: float) -> void:
+	if state == State.GOAL_SCORED:
+		goal_pause_timer -= delta
+		if goal_pause_timer <= 0.0:
+			goal_pause_timer = 0.0
+			state = State.KICKOFF_SETUP
+
+
+## True if the match is in active play.
+func is_playing() -> bool:
+	return state == State.PLAYING
+
+
+## Get the current state.
+func get_state() -> int:
+	return state
+
+
+## Get score as a formatted string.
+func get_score_text() -> String:
+	return "%d - %d" % [score_home, score_away]
+
+
+## Transition from KICKOFF_SETUP back to PLAYING.
+func kickoff_complete() -> void:
+	if state == State.KICKOFF_SETUP:
+		state = State.PLAYING

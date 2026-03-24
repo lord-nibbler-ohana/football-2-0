@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/match.gd" id="1_match"]
 [ext_resource type="Script" path="res://scripts/team.gd" id="2_team"]
 [ext_resource type="PackedScene" path="res://scenes/ball.tscn" id="3_ball"]
+[ext_resource type="PackedScene" path="res://scenes/goal.tscn" id="4_goal"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_match")
@@ -12,6 +13,12 @@ script = ExtResource("1_match")
 [node name="Pitch" type="Node2D" parent="."]
 
 [node name="PitchSprite" type="Sprite2D" parent="Pitch"]
+
+[node name="GoalLeft" parent="." instance=ExtResource("4_goal")]
+is_left_goal = true
+
+[node name="GoalRight" parent="." instance=ExtResource("4_goal")]
+is_left_goal = false
 
 [node name="Ball" parent="." instance=ExtResource("3_ball")]
 

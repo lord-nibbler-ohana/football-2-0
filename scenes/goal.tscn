@@ -1,0 +1,37 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/goal.gd" id="1_goal"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_mouth"]
+size = Vector2(6, 48)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_post_top"]
+size = Vector2(3, 3)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_post_bottom"]
+size = Vector2(3, 3)
+
+[node name="Goal" type="Node2D"]
+script = ExtResource("1_goal")
+
+[node name="GoalArea" type="Area2D" parent="."]
+collision_layer = 8
+collision_mask = 2
+monitoring = true
+
+[node name="GoalMouthShape" type="CollisionShape2D" parent="GoalArea"]
+shape = SubResource("RectangleShape2D_mouth")
+
+[node name="TopPost" type="StaticBody2D" parent="."]
+collision_layer = 1
+collision_mask = 0
+
+[node name="PostShape" type="CollisionShape2D" parent="TopPost"]
+shape = SubResource("RectangleShape2D_post_top")
+
+[node name="BottomPost" type="StaticBody2D" parent="."]
+collision_layer = 1
+collision_mask = 0
+
+[node name="PostShape" type="CollisionShape2D" parent="BottomPost"]
+shape = SubResource("RectangleShape2D_post_bottom")

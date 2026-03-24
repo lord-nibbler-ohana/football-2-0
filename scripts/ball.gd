@@ -1,6 +1,8 @@
 extends CharacterBody2D
 ## Ball node — delegates physics to BallPhysicsPure, handles visuals and collision.
 
+signal post_hit
+
 var physics: BallPhysicsPure
 var aftertouch: AftertouchPure
 var last_kicker: Node = null
@@ -33,6 +35,16 @@ func _physics_process(_delta: float) -> void:
 	# CharacterBody2D.velocity is px/sec; displacement is px/frame at 50 Hz
 	velocity = displacement * 50.0
 	move_and_slide()
+
+	# Sync reflected velocity back after collisions and apply post energy loss
+	if get_slide_collision_count() > 0:
+		physics.velocity = self.velocity / 50.0
+		for i in range(get_slide_collision_count()):
+			var collision := get_slide_collision(i)
+			if collision.get_collider().is_in_group("goalpost"):
+				physics.velocity *= GoalDetectionPure.POST_HIT_ENERGY_FACTOR
+				post_hit.emit()
+				break
 
 	# Update visuals
 	ball_sprite.position.y = physics.get_sprite_offset_y()
