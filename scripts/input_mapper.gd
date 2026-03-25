@@ -20,3 +20,8 @@ static func is_kick_just_pressed() -> bool:
 ## True while the kick button is held down.
 static func is_kick_held() -> bool:
 	return Input.is_action_pressed("action_kick")
+
+
+## True on the frame the kick button is released.
+static func is_kick_just_released() -> bool:
+	return Input.is_action_just_released("action_kick")

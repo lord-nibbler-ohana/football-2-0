@@ -14,6 +14,10 @@ var kit_style: KitStyle = KitStyle.SOLID
 var kit_primary: Color = Color.RED
 var kit_secondary: Color = Color.BLUE
 
+## Team and role metadata (set by team.gd on spawn).
+var team_id: int = 0
+var is_goalkeeper: bool = false
+
 ## Movement and control state.
 var is_human_controlled: bool = false
 var is_selected: bool = false:
@@ -25,14 +29,27 @@ var formation_position: Vector2 = Vector2.ZERO
 var facing_direction: Vector2 = Vector2.DOWN
 var has_possession: bool = false
 
+## Kick state machine (pure logic).
+var kick_state: KickStatePure
+
+## Fire button held flag — used for ball passthrough (ball ignores own team while held).
+var fire_held: bool = false
+
+## Post-kick cooldown — prevents immediate re-possession after kicking.
+const KICK_COOLDOWN_FRAMES := 15
+var kick_cooldown: int = 0
+
 ## Reference to the ball node (set by match.gd).
 var ball: CharacterBody2D = null
 
+## Reference to all players (set by match.gd for pass targeting).
+var all_players_ref: Array = []
+
+## This player's index in all_players_ref (set by match.gd).
+var player_index: int = -1
+
 ## Movement speed in px/frame at 50 Hz.
 const PLAYER_SPEED := 2.0
-
-## Kick speeds in px/frame at 50 Hz.
-const KICK_SPEED_SHOT := 6.0
 
 ## Sprite sheet paths per kit style.
 const SHEET_PATHS := {
@@ -92,6 +109,7 @@ const ANIM_SPEEDS := {
 
 func _ready() -> void:
 	animation_state = PlayerAnimationPure.new()
+	kick_state = KickStatePure.new()
 	_build_sprite_frames()
 	_apply_kit_shader()
 	anim_sprite.sprite_frames = _sprite_frames
@@ -102,6 +120,10 @@ func _ready() -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	# Tick down kick cooldown
+	if kick_cooldown > 0:
+		kick_cooldown -= 1
+
 	if is_selected:
 		_handle_human_input()
 	else:
@@ -135,17 +157,65 @@ func _handle_human_input() -> void:
 		velocity = input_dir * PLAYER_SPEED * 50.0
 		move_and_slide()
 
-	# Kick on space press
-	if InputMapper.is_kick_just_pressed() and has_possession and ball:
-		_do_kick()
+	# Cancel charge if possession lost
+	if kick_state.is_charging() and not has_possession:
+		kick_state.reset()
+		fire_held = false
+
+	# Kick state machine
+	match kick_state.state:
+		KickStatePure.State.IDLE:
+			if InputMapper.is_kick_just_pressed() and has_possession and ball:
+				kick_state.start_charge()
+				fire_held = true
+		KickStatePure.State.CHARGING:
+			# Tick charge while held
+			if InputMapper.is_kick_held():
+				kick_state.tick_charge()
+			# Release on button up — also handle single-frame press where
+			# just_released fires same frame as just_pressed (missed by match branch)
+			if InputMapper.is_kick_just_released() or not InputMapper.is_kick_held():
+				_perform_kick(input_dir)
+		KickStatePure.State.AFTERTOUCH:
+			kick_state.tick_aftertouch()
+			if not InputMapper.is_kick_held():
+				fire_held = false
 
 
-## Perform a kick — send the ball in the facing direction.
-func _do_kick() -> void:
-	var kick_vel := facing_direction.normalized() * KICK_SPEED_SHOT
-	ball.kick(kick_vel, 0.0, self)
-	animation_state.trigger_kick()
-	has_possession = false
+## Perform the kick — delegates to KickStatePure for pass/shot decision.
+func _perform_kick(input_dir: Vector2) -> void:
+	if not ball:
+		return
+	var player_infos := _get_all_player_infos()
+	var result := kick_state.release(
+		input_dir, facing_direction, player_infos,
+		global_position, team_id, player_index)
+	if result["type"] != "none":
+		ball.kick(result["velocity"], result["up_velocity"], self)
+		animation_state.trigger_kick()
+		has_possession = false
+		kick_cooldown = KICK_COOLDOWN_FRAMES
+
+
+## Build player info dicts for pass targeting.
+func _get_all_player_infos() -> Array:
+	var infos: Array = []
+	for player in all_players_ref:
+		infos.append({
+			"position": player.global_position,
+			"team_id": player.team_id,
+		})
+	return infos
+
+
+## True if fire button is currently held (for ball passthrough).
+func is_fire_held() -> bool:
+	return fire_held
+
+
+## True if player just kicked and can't re-possess yet.
+func has_kick_cooldown() -> bool:
+	return kick_cooldown > 0
 
 
 ## Get current joystick/keyboard input direction.

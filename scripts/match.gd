@@ -46,9 +46,12 @@ func _setup_players() -> void:
 	var away_players: Array = team_away.get_players()
 	all_players = home_players + away_players
 
-	# Give every player a reference to the ball, ensure none are selected
-	for player in all_players:
+	# Give every player a reference to the ball and all players, ensure none are selected
+	for i in range(all_players.size()):
+		var player: CharacterBody2D = all_players[i]
 		player.ball = ball
+		player.all_players_ref = all_players
+		player.player_index = i
 		player.is_human_controlled = false
 		player.is_selected = false
 
@@ -67,24 +70,57 @@ func _physics_process(delta: float) -> void:
 			match_time += delta
 			_update_clock()
 			_update_possession()
+			_enforce_boundaries()
 		MatchStatePure.State.KICKOFF_SETUP:
 			_reset_to_kickoff()
 			match_state.kickoff_complete()
 
 
 ## Check proximity-based possession and handle dribbling.
+## Supports ball passthrough: while the kicker holds fire, own teammates
+## are excluded from possession checks so the ball passes through them.
 func _update_possession() -> void:
-	var ball_airborne: bool = ball.physics.is_airborne()
+	# Determine passthrough state
+	var passthrough_team_id := -1
+	if selected_player and selected_player.is_fire_held():
+		passthrough_team_id = selected_player.team_id
 
-	# Build position array matching all_players order
-	var positions: Array = []
-	for player in all_players:
-		positions.append(player.global_position)
+	# Build player_infos, filtering out passthrough teammates and cooldown players
+	var player_infos: Array = []
+	var index_map: Array = []  # Maps filtered index -> all_players index
+	for i in range(all_players.size()):
+		var player: CharacterBody2D = all_players[i]
 
-	var possessor_idx := possession.check_possession(
-		positions, ball.global_position, ball_airborne)
+		# Skip players with post-kick cooldown (prevents immediate re-possession)
+		if player.has_kick_cooldown():
+			continue
 
-	# Clear old possession
+		# Skip same-team non-kicker players during passthrough
+		if passthrough_team_id >= 0 \
+				and player.team_id == passthrough_team_id \
+				and player != selected_player:
+			continue
+
+		player_infos.append({
+			"position": player.global_position,
+			"team_id": player.team_id,
+			"is_goalkeeper": player.is_goalkeeper,
+			"velocity": player.velocity / 50.0,  # Convert to px/frame
+		})
+		index_map.append(i)
+
+	var ball_height: float = ball.physics.height
+	var ball_speed: float = ball.physics.get_ground_speed()
+
+	var possessor_filtered_idx := possession.check_possession(
+		player_infos, ball.global_position, ball_height, ball_speed)
+
+	# Map filtered index back to all_players index
+	var possessor_idx := -1
+	if possessor_filtered_idx >= 0 and possessor_filtered_idx < index_map.size():
+		possessor_idx = index_map[possessor_filtered_idx]
+
+	# Clear old possession flags
 	for player in all_players:
 		player.has_possession = false
 
@@ -93,12 +129,31 @@ func _update_possession() -> void:
 		var possessor: CharacterBody2D = all_players[possessor_idx]
 		possessor.has_possession = true
 
-		# Dribble: move ball to follow the possessing player
-		if possessor.is_selected:
-			var dribble_pos := PossessionPure.get_dribble_position(
-				possessor.global_position, possessor.facing_direction)
-			ball.global_position = dribble_pos
-			ball.physics.velocity = Vector2.ZERO
+		# Apply pickup damping on first frame of gaining possession
+		if possession.was_pickup_this_frame:
+			ball.apply_damping(PossessionPure.PICKUP_DAMPING)
+
+		# Dribble: lerp ball toward target (tethered, not glued)
+		var dribble_target := PossessionPure.get_dribble_target(
+			possessor.global_position, possessor.facing_direction)
+		ball.global_position = ball.global_position.lerp(
+			dribble_target, PossessionPure.DRIBBLE_LERP_FACTOR)
+		# Ball velocity matches possessor during dribble
+		ball.physics.velocity = possessor.velocity / 50.0
+
+
+## Enforce world boundaries — bounce ball, clamp players.
+func _enforce_boundaries() -> void:
+	# Ball boundary bounce (with goal mouth exception)
+	var ball_result := BoundaryPure.clamp_ball(
+		ball.global_position, ball.physics.velocity)
+	ball.global_position = ball_result["position"]
+	ball.physics.velocity = ball_result["velocity"]
+
+	# Player boundary clamp
+	for player in all_players:
+		player.global_position = BoundaryPure.clamp_player(
+			player.global_position)
 
 
 func _on_goal_detected(side: String) -> void:

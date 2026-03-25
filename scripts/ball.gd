@@ -81,6 +81,11 @@ func _get_kicker_input() -> Vector2:
 	return Vector2.ZERO
 
 
+## Dampen ball velocity (e.g., on pickup — the "trapping" feel).
+func apply_damping(factor: float) -> void:
+	physics.velocity *= factor
+
+
 ## Reset ball state (e.g., for kickoff).
 func reset_ball() -> void:
 	physics.reset()

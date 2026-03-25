@@ -25,12 +25,17 @@ const AWAY_POSITIONS: Array[Vector2] = [
 @export var is_home: bool = true
 
 ## Kit configuration.
+@export var team_id: int = 0
+
 @export var kit_primary: Color = Color.RED
 @export var kit_secondary: Color = Color.BLUE
 @export var kit_style: int = 0  # 0=SOLID, 1=VSTRIPES, 2=HSTRIPES
 
 
 func _ready() -> void:
+	# Derive team_id from home/away
+	team_id = 0 if is_home else 1
+
 	# Set default kit colors based on home/away
 	if is_home:
 		kit_primary = Color(0.8, 0.1, 0.1)   # Red
@@ -50,6 +55,8 @@ func _spawn_players() -> void:
 		var player: CharacterBody2D = PLAYER_SCENE.instantiate()
 		player.position = positions[i]
 		player.formation_position = positions[i]
+		player.team_id = team_id
+		player.is_goalkeeper = (i == 0)
 		add_child(player)
 
 

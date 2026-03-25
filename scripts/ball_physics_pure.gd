@@ -75,6 +75,11 @@ func get_shadow_opacity() -> float:
 	return clampf(1.0 / (1.0 + height * 0.05), 0.2, 1.0)
 
 
+## Ground speed magnitude (px/frame).
+func get_ground_speed() -> float:
+	return velocity.length()
+
+
 ## Reset all state.
 func reset() -> void:
 	velocity = Vector2.ZERO
