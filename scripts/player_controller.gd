@@ -5,6 +5,7 @@ var animation_state: PlayerAnimationPure
 var _sprite_frames: SpriteFrames
 
 @onready var anim_sprite: AnimatedSprite2D = $AnimatedSprite2D
+@onready var selection_arrow: Polygon2D = $SelectionArrow
 
 ## Kit style determines which sprite sheet to use.
 enum KitStyle { SOLID, VERTICAL_STRIPES, HORIZONTAL_STRIPES }
@@ -12,6 +13,26 @@ enum KitStyle { SOLID, VERTICAL_STRIPES, HORIZONTAL_STRIPES }
 var kit_style: KitStyle = KitStyle.SOLID
 var kit_primary: Color = Color.RED
 var kit_secondary: Color = Color.BLUE
+
+## Movement and control state.
+var is_human_controlled: bool = false
+var is_selected: bool = false:
+	set(value):
+		is_selected = value
+		if selection_arrow:
+			selection_arrow.visible = value
+var formation_position: Vector2 = Vector2.ZERO
+var facing_direction: Vector2 = Vector2.DOWN
+var has_possession: bool = false
+
+## Reference to the ball node (set by match.gd).
+var ball: CharacterBody2D = null
+
+## Movement speed in px/frame at 50 Hz.
+const PLAYER_SPEED := 2.0
+
+## Kick speeds in px/frame at 50 Hz.
+const KICK_SPEED_SHOT := 6.0
 
 ## Sprite sheet paths per kit style.
 const SHEET_PATHS := {
@@ -22,15 +43,10 @@ const SHEET_PATHS := {
 
 ## Cell size in the sprite sheet.
 const CELL_W := 16
-const CELL_H := 32
+const CELL_H := 16
 const SHEET_COLS := 10
 
 ## Animation mapping: animation_name -> array of cell indices in the sprite sheet.
-## Top band (cells 0-13): upright running, 2 frames per direction.
-## Cells 0-1: run S, 2-3: run SE, 4-5: run E, 6-7: run NE, 8-9: run N
-## Cells 10-11: run NW (mirror), 12-13: run W (mirror) — stored but we use flip_h
-## Cells 14-19: kick/header poses
-## Bands 1-8 (cells 20-71): slide tackle by direction
 const ANIM_MAP := {
 	# Running: 2 frames per direction
 	"run_s":  [0, 1],
@@ -80,9 +96,19 @@ func _ready() -> void:
 	_apply_kit_shader()
 	anim_sprite.sprite_frames = _sprite_frames
 	anim_sprite.play("idle_s")
+	# Hide selection arrow by default
+	if selection_arrow:
+		selection_arrow.visible = is_selected
 
 
 func _physics_process(_delta: float) -> void:
+	if is_selected:
+		_handle_human_input()
+	else:
+		# Non-controlled players stand at formation position (no AI yet)
+		velocity = Vector2.ZERO
+
+	# Update animation from velocity (animation system reads px/frame)
 	var result := animation_state.update(velocity / 50.0)
 	var anim_name: String = result["animation"]
 	var flip: bool = result["flip_h"]
@@ -93,9 +119,41 @@ func _physics_process(_delta: float) -> void:
 		if anim_sprite.animation != anim_name:
 			anim_sprite.play(anim_name)
 	else:
-		# Fallback to idle_s if animation not found
 		if anim_sprite.animation != "idle_s":
 			anim_sprite.play("idle_s")
+
+
+## Handle keyboard input for the human-controlled player.
+func _handle_human_input() -> void:
+	var input_dir := InputMapper.get_movement_input()
+
+	if input_dir != Vector2.ZERO:
+		facing_direction = input_dir
+
+	if not animation_state.is_locked():
+		# velocity in px/sec for move_and_slide
+		velocity = input_dir * PLAYER_SPEED * 50.0
+		move_and_slide()
+
+	# Kick on space press
+	if InputMapper.is_kick_just_pressed() and has_possession and ball:
+		_do_kick()
+
+
+## Perform a kick — send the ball in the facing direction.
+func _do_kick() -> void:
+	var kick_vel := facing_direction.normalized() * KICK_SPEED_SHOT
+	ball.kick(kick_vel, 0.0, self)
+	animation_state.trigger_kick()
+	has_possession = false
+
+
+## Get current joystick/keyboard input direction.
+## Called by ball.gd for aftertouch after kicking.
+func get_joystick_input() -> Vector2:
+	if is_selected:
+		return InputMapper.get_movement_input()
+	return Vector2.ZERO
 
 
 ## Build SpriteFrames resource from the sprite sheet.

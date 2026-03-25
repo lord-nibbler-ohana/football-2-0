@@ -25,6 +25,7 @@ is_left_goal = true
 is_left_goal = false
 
 [node name="Ball" parent="." instance=ExtResource("3_ball")]
+position = Vector2(160, 120)
 
 [node name="TeamHome" type="Node2D" parent="."]
 script = ExtResource("2_team")

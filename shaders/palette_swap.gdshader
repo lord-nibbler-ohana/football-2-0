@@ -15,10 +15,7 @@ void fragment() {
 
 	if (pixel.a < 0.01) {
 		COLOR = pixel;
-		return;
-	}
-
-	if (distance(pixel.rgb, MARKER_PRIMARY) < THRESHOLD) {
+	} else if (distance(pixel.rgb, MARKER_PRIMARY) < THRESHOLD) {
 		COLOR = vec4(kit_primary.rgb, pixel.a);
 	} else if (distance(pixel.rgb, MARKER_SECONDARY) < THRESHOLD) {
 		COLOR = vec4(kit_secondary.rgb, pixel.a);
