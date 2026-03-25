@@ -1,31 +1,33 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/match.gd" id="1_match"]
 [ext_resource type="Script" path="res://scripts/team.gd" id="2_team"]
 [ext_resource type="PackedScene" path="res://scenes/ball.tscn" id="3_ball"]
 [ext_resource type="PackedScene" path="res://scenes/goal.tscn" id="4_goal"]
 [ext_resource type="Texture2D" path="res://sprites/pitch/pitch.png" id="5_pitch_tex"]
+[ext_resource type="Script" path="res://scripts/camera.gd" id="6_camera"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_match")
 
 [node name="Camera2D" type="Camera2D" parent="."]
-position = Vector2(160, 120)
+position = Vector2(300, 360)
+script = ExtResource("6_camera")
 
 [node name="Pitch" type="Node2D" parent="."]
 
 [node name="PitchSprite" type="Sprite2D" parent="Pitch"]
-position = Vector2(160, 120)
+position = Vector2(300, 360)
 texture = ExtResource("5_pitch_tex")
 
-[node name="GoalLeft" parent="." instance=ExtResource("4_goal")]
-is_left_goal = true
+[node name="GoalTop" parent="." instance=ExtResource("4_goal")]
+is_top_goal = true
 
-[node name="GoalRight" parent="." instance=ExtResource("4_goal")]
-is_left_goal = false
+[node name="GoalBottom" parent="." instance=ExtResource("4_goal")]
+is_top_goal = false
 
 [node name="Ball" parent="." instance=ExtResource("3_ball")]
-position = Vector2(160, 120)
+position = Vector2(300, 360)
 
 [node name="TeamHome" type="Node2D" parent="."]
 script = ExtResource("2_team")

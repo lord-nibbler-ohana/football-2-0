@@ -19,15 +19,15 @@ func start_play() -> void:
 	state = State.PLAYING
 
 
-## Record a goal scored in the given side ("left" or "right").
-## Left goal = away team scores, right goal = home team scores.
+## Record a goal scored in the given side ("top" or "bottom").
+## Top goal = home team scores (attacking upward), bottom goal = away team scores.
 func record_goal(side: String) -> void:
-	if side == "left":
-		score_away += 1
-		last_goal_team = "away"
-	elif side == "right":
+	if side == "top":
 		score_home += 1
 		last_goal_team = "home"
+	elif side == "bottom":
+		score_away += 1
+		last_goal_team = "away"
 	state = State.GOAL_SCORED
 	goal_pause_timer = GOAL_CELEBRATION_TIME
 

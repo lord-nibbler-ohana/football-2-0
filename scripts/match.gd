@@ -14,6 +14,7 @@ var selected_player: CharacterBody2D = null
 @onready var clock: Label = $UI/Clock
 @onready var team_home: Node2D = $TeamHome
 @onready var team_away: Node2D = $TeamAway
+@onready var camera: Camera2D = $Camera2D
 
 
 func _ready() -> void:
@@ -21,13 +22,16 @@ func _ready() -> void:
 	possession = PossessionPure.new()
 
 	# Connect goal signals
-	if has_node("GoalLeft"):
-		$GoalLeft.goal_detected.connect(_on_goal_detected)
-	if has_node("GoalRight"):
-		$GoalRight.goal_detected.connect(_on_goal_detected)
+	if has_node("GoalTop"):
+		$GoalTop.goal_detected.connect(_on_goal_detected)
+	if has_node("GoalBottom"):
+		$GoalBottom.goal_detected.connect(_on_goal_detected)
 
-	# Set ball to center before match starts
-	ball.position = Vector2(160, 120)
+	# Wire camera to ball
+	camera.ball = ball
+
+	# Set ball to pitch center before match starts
+	ball.position = PitchGeometry.CENTER
 
 	# Wait one frame for teams to spawn their players
 	await get_tree().process_frame
@@ -107,8 +111,9 @@ func _on_goal_detected(side: String) -> void:
 
 func _reset_to_kickoff() -> void:
 	ball.reset_ball()
-	ball.position = Vector2(160, 120)
+	ball.position = PitchGeometry.CENTER
 	possession.reset()
+	camera.center_on_pitch()
 
 	# Reset players to formation positions
 	for player in all_players:

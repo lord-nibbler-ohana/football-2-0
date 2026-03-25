@@ -1,16 +1,14 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/goal.gd" id="1_goal"]
-[ext_resource type="Texture2D" path="res://sprites/pitch/goal_left.png" id="2_goal_left"]
-[ext_resource type="Texture2D" path="res://sprites/pitch/goal_right.png" id="3_goal_right"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_mouth"]
-size = Vector2(6, 48)
+size = Vector2(84, 6)
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_post_top"]
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_post_left"]
 size = Vector2(3, 3)
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_post_bottom"]
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_post_right"]
 size = Vector2(3, 3)
 
 [node name="Goal" type="Node2D"]
@@ -26,16 +24,16 @@ monitoring = true
 [node name="GoalMouthShape" type="CollisionShape2D" parent="GoalArea"]
 shape = SubResource("RectangleShape2D_mouth")
 
-[node name="TopPost" type="StaticBody2D" parent="."]
+[node name="LeftPost" type="StaticBody2D" parent="."]
 collision_layer = 1
 collision_mask = 0
 
-[node name="PostShape" type="CollisionShape2D" parent="TopPost"]
-shape = SubResource("RectangleShape2D_post_top")
+[node name="PostShape" type="CollisionShape2D" parent="LeftPost"]
+shape = SubResource("RectangleShape2D_post_left")
 
-[node name="BottomPost" type="StaticBody2D" parent="."]
+[node name="RightPost" type="StaticBody2D" parent="."]
 collision_layer = 1
 collision_mask = 0
 
-[node name="PostShape" type="CollisionShape2D" parent="BottomPost"]
-shape = SubResource("RectangleShape2D_post_bottom")
+[node name="PostShape" type="CollisionShape2D" parent="RightPost"]
+shape = SubResource("RectangleShape2D_post_right")

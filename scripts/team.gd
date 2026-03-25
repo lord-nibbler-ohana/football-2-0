@@ -4,19 +4,21 @@ extends Node2D
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
 
 ## 5v5 formation positions for each team half.
+## Vertical pitch: home at bottom (attacks upward), away at top (attacks downward).
+## Positions derived from PitchGeometry: playing area 520×640, margins 40×40.
 const HOME_POSITIONS: Array[Vector2] = [
-	Vector2(24, 120),   # GK
-	Vector2(64, 80),    # DEF (top)
-	Vector2(64, 160),   # DEF (bottom)
-	Vector2(110, 120),  # MID
-	Vector2(145, 120),  # FWD
+	Vector2(300, 600),   # GK — near bottom goal
+	Vector2(220, 545),   # DEF (left)
+	Vector2(380, 545),   # DEF (right)
+	Vector2(300, 460),   # MID
+	Vector2(300, 392),   # FWD — near center
 ]
 const AWAY_POSITIONS: Array[Vector2] = [
-	Vector2(296, 120),  # GK
-	Vector2(256, 80),   # DEF (top)
-	Vector2(256, 160),  # DEF (bottom)
-	Vector2(210, 120),  # MID
-	Vector2(175, 120),  # FWD
+	Vector2(300, 120),   # GK — near top goal
+	Vector2(220, 175),   # DEF (left)
+	Vector2(380, 175),   # DEF (right)
+	Vector2(300, 260),   # MID
+	Vector2(300, 328),   # FWD — near center
 ]
 
 @export var team_name: String = ""
