@@ -191,7 +191,8 @@ func _perform_kick(input_dir: Vector2) -> void:
 		input_dir, facing_direction, player_infos,
 		global_position, team_id, player_index)
 	if result["type"] != "none":
-		ball.kick(result["velocity"], result["up_velocity"], self)
+		var kick_spin: float = result.get("spin", 0.0)
+		ball.kick(result["velocity"], result["up_velocity"], self, false, kick_spin)
 		animation_state.trigger_kick()
 		has_possession = false
 		kick_cooldown = KICK_COOLDOWN_FRAMES

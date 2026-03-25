@@ -93,8 +93,8 @@ func test_ball_at_exact_min_height_blocks_pickup():
 
 func test_goalkeeper_larger_pickup_radius():
 	var infos: Array = [_info(Vector2(100, 100), 0, true)]  # GK
-	# 15px away: outside 10px normal, inside 18px GK radius
-	var result := possession.check_possession(infos, Vector2(115, 100))
+	# 14px away: outside 8px normal, inside 15px GK radius
+	var result := possession.check_possession(infos, Vector2(114, 100))
 	assert_eq(result, 0, "GK should pick up within GK_PICKUP_RADIUS")
 
 
@@ -135,7 +135,7 @@ func test_slow_ball_allows_pickup():
 func test_ball_at_exact_speed_threshold_blocks():
 	var infos: Array = [_info(Vector2(100, 100))]
 	var result := possession.check_possession(
-		infos, Vector2(105, 100), 0.0, 4.0)
+		infos, Vector2(105, 100), 0.0, 2.5)
 	assert_eq(result, -1, "Ball at exact speed threshold should block pickup")
 
 
@@ -146,8 +146,8 @@ func test_possession_retained_within_dribble_radius():
 	# Gain possession first
 	possession.check_possession(infos, Vector2(105, 100))
 	assert_eq(possession.possessor_index, 0)
-	# Ball drifts to 12px away — still within 14px DRIBBLE_RADIUS
-	var result := possession.check_possession(infos, Vector2(112, 100))
+	# Ball drifts to 10px away — still within 12px DRIBBLE_RADIUS
+	var result := possession.check_possession(infos, Vector2(110, 100))
 	assert_eq(result, 0, "Should retain possession within dribble radius")
 
 
@@ -155,8 +155,8 @@ func test_possession_lost_beyond_dribble_radius():
 	var infos: Array = [_info(Vector2(100, 100))]
 	# Gain possession
 	possession.check_possession(infos, Vector2(105, 100))
-	# Ball moves to 20px away — beyond 14px DRIBBLE_RADIUS
-	var result := possession.check_possession(infos, Vector2(120, 100))
+	# Ball moves to 15px away — beyond 12px DRIBBLE_RADIUS
+	var result := possession.check_possession(infos, Vector2(115, 100))
 	assert_eq(result, -1, "Should lose possession beyond dribble radius")
 
 
@@ -166,10 +166,10 @@ func test_contested_different_teams_approach_speed_wins():
 	# Two players at roughly the same distance but different approach speeds
 	var ball_pos := Vector2(100, 100)
 	var infos: Array = [
-		# Team 0 — 8px away, moving toward ball
-		_info(Vector2(92, 100), 0, false, Vector2(2.0, 0.0)),
-		# Team 1 — 8px away, stationary
-		_info(Vector2(108, 100), 1, false, Vector2.ZERO),
+		# Team 0 — 7px away, moving toward ball
+		_info(Vector2(93, 100), 0, false, Vector2(2.0, 0.0)),
+		# Team 1 — 7px away, stationary
+		_info(Vector2(107, 100), 1, false, Vector2.ZERO),
 	]
 	var result := possession.check_possession(infos, ball_pos)
 	assert_eq(result, 0, "Player with higher approach speed should win contested ball")
@@ -178,10 +178,10 @@ func test_contested_different_teams_approach_speed_wins():
 func test_contested_one_approaching_one_retreating():
 	var ball_pos := Vector2(100, 100)
 	var infos: Array = [
-		# Team 0 — 8px away, moving away from ball
-		_info(Vector2(92, 100), 0, false, Vector2(-2.0, 0.0)),
-		# Team 1 — 8px away, moving toward ball
-		_info(Vector2(108, 100), 1, false, Vector2(-2.0, 0.0)),
+		# Team 0 — 7px away, moving away from ball
+		_info(Vector2(93, 100), 0, false, Vector2(-2.0, 0.0)),
+		# Team 1 — 7px away, moving toward ball
+		_info(Vector2(107, 100), 1, false, Vector2(-2.0, 0.0)),
 	]
 	var result := possession.check_possession(infos, ball_pos)
 	assert_eq(result, 1, "Approaching player should beat retreating player")
@@ -197,12 +197,12 @@ func test_same_team_candidates_closest_wins():
 	assert_eq(result, 1, "Same-team: closest player should win")
 
 
-# ===== Dribble target (6px offset) =====
+# ===== Dribble target (5px offset) =====
 
 func test_dribble_target_right():
 	var pos := PossessionPure.get_dribble_target(
 		Vector2(100, 100), Vector2.RIGHT)
-	assert_almost_eq(pos.x, 106.0, 0.1, "Dribble target right X = player + 6")
+	assert_almost_eq(pos.x, 105.0, 0.1, "Dribble target right X = player + 5")
 	assert_almost_eq(pos.y, 100.0, 0.1, "Dribble target right Y unchanged")
 
 
@@ -210,13 +210,13 @@ func test_dribble_target_down():
 	var pos := PossessionPure.get_dribble_target(
 		Vector2(100, 100), Vector2.DOWN)
 	assert_almost_eq(pos.x, 100.0, 0.1, "Dribble target down X unchanged")
-	assert_almost_eq(pos.y, 106.0, 0.1, "Dribble target down Y = player + 6")
+	assert_almost_eq(pos.y, 105.0, 0.1, "Dribble target down Y = player + 5")
 
 
 func test_dribble_target_diagonal():
 	var pos := PossessionPure.get_dribble_target(
 		Vector2(100, 100), Vector2(1, 1).normalized())
-	var expected_offset := 6.0 * 0.707107
+	var expected_offset := 5.0 * 0.707107
 	assert_almost_eq(pos.x, 100.0 + expected_offset, 0.2, "Dribble target SE X")
 	assert_almost_eq(pos.y, 100.0 + expected_offset, 0.2, "Dribble target SE Y")
 
@@ -225,13 +225,13 @@ func test_dribble_target_zero_facing_defaults_to_down():
 	var pos := PossessionPure.get_dribble_target(
 		Vector2(100, 100), Vector2.ZERO)
 	assert_almost_eq(pos.x, 100.0, 0.1, "Default X unchanged")
-	assert_almost_eq(pos.y, 106.0, 0.1, "Default Y = player + 6 (south)")
+	assert_almost_eq(pos.y, 105.0, 0.1, "Default Y = player + 5 (south)")
 
 
 func test_dribble_target_left():
 	var pos := PossessionPure.get_dribble_target(
 		Vector2(100, 100), Vector2.LEFT)
-	assert_almost_eq(pos.x, 94.0, 0.1, "Dribble target left X = player - 6")
+	assert_almost_eq(pos.x, 95.0, 0.1, "Dribble target left X = player - 5")
 	assert_almost_eq(pos.y, 100.0, 0.1, "Dribble target left Y unchanged")
 
 
@@ -239,7 +239,7 @@ func test_dribble_target_up():
 	var pos := PossessionPure.get_dribble_target(
 		Vector2(100, 100), Vector2.UP)
 	assert_almost_eq(pos.x, 100.0, 0.1, "Dribble target up X unchanged")
-	assert_almost_eq(pos.y, 94.0, 0.1, "Dribble target up Y = player - 6")
+	assert_almost_eq(pos.y, 95.0, 0.1, "Dribble target up Y = player - 5")
 
 
 # ===== Pickup damping flag =====

@@ -22,10 +22,19 @@ func _ready() -> void:
 		goal_y = GoalDetectionPure.GOAL_TOP_Y
 		area_offset_y = -GoalDetectionPure.GOAL_DEPTH / 2.0
 		goal_sprite.texture = _goal_top_tex
+		# Top goal: crossbar is at BOTTOM of sprite, net extends upward.
+		# Offset so bottom of sprite aligns with goal line.
+		goal_sprite.offset.y = -goal_sprite.texture.get_height() / 2.0
 	else:
 		goal_y = GoalDetectionPure.GOAL_BOTTOM_Y
 		area_offset_y = GoalDetectionPure.GOAL_DEPTH / 2.0
 		goal_sprite.texture = _goal_bottom_tex
+		# Bottom goal (flipped): posts/net at top (pitch side), crossbar at bottom (behind).
+		# Goal line at 66% from sprite top (matching ysoccer proportions).
+		# Shift sprite UP so 66% is above goal line and 34% below.
+		var tex_h := float(goal_sprite.texture.get_height())
+		var goal_line_row := roundf(tex_h * 0.66)
+		goal_sprite.offset.y = tex_h / 2.0 - goal_line_row
 
 	var mouth_center_x := (GoalDetectionPure.GOAL_MOUTH_LEFT + GoalDetectionPure.GOAL_MOUTH_RIGHT) / 2.0
 
@@ -36,7 +45,7 @@ func _ready() -> void:
 	left_post.position = Vector2(GoalDetectionPure.GOAL_MOUTH_LEFT, goal_y)
 	right_post.position = Vector2(GoalDetectionPure.GOAL_MOUTH_RIGHT, goal_y)
 
-	# Position goal sprite centered on the goal mouth
+	# Position goal sprite centered on the goal mouth, at goal line
 	goal_sprite.position = Vector2(mouth_center_x, goal_y)
 
 	# Add posts to goalpost group for collision detection

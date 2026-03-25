@@ -22,7 +22,9 @@ func _physics_process(_delta: float) -> void:
 	if aftertouch.is_active():
 		var input := _get_kicker_input()
 		var result := aftertouch.tick(input)
-		physics.velocity += result["velocity_offset"]
+		# Spin-based curl from perpendicular input
+		physics.apply_spin(result["spin_offset"])
+		# Vertical loft/dip
 		physics.vertical_velocity += result["vertical_offset"]
 		# Clamp: dip should not push ball underground
 		if physics.height > 0.0:
@@ -53,19 +55,21 @@ func _physics_process(_delta: float) -> void:
 
 	# Cycle ball rotation frame based on distance traveled
 	var speed := physics.velocity.length()
-	if speed > 0.5:
+	if speed > 0.2:
 		_rotation_accum += speed
-		if _rotation_accum > 4.0:
+		if _rotation_accum > 2.0:
 			_rotation_accum = 0.0
-			ball_sprite.frame = (ball_sprite.frame + 1) % 3
+			ball_sprite.frame = (ball_sprite.frame + 1) % 4
 
 
-## Kick the ball with a ground velocity and optional upward velocity.
+## Kick the ball with a ground velocity, optional upward velocity, and optional spin.
 ## kicker: the player node that kicked (for aftertouch input tracking).
 ## is_set_piece: true for corners, free kicks, goal kicks (extended aftertouch window).
 func kick(ground_vel: Vector2, up_vel: float = 0.0,
-		kicker: Node = null, is_set_piece: bool = false) -> void:
+		kicker: Node = null, is_set_piece: bool = false,
+		kick_spin: float = 0.0) -> void:
 	physics.apply_kick(ground_vel, up_vel)
+	physics.spin = kick_spin
 	last_kicker = kicker
 	if ground_vel.length() > 0.0:
 		aftertouch.activate(ground_vel, is_set_piece)
@@ -74,7 +78,6 @@ func kick(ground_vel: Vector2, up_vel: float = 0.0,
 
 
 ## Get the kicking player's current joystick input.
-## Returns Vector2.ZERO until the input system is implemented.
 func _get_kicker_input() -> Vector2:
 	if last_kicker and last_kicker.has_method("get_joystick_input"):
 		return last_kicker.get_joystick_input()

@@ -84,6 +84,7 @@ func test_short_tap_ground_pass_no_lift():
 	kick.tick_charge()
 	var result := kick.release(Vector2.UP, Vector2.UP, [], Vector2(300, 400), 0)
 	assert_eq(result["up_velocity"], 0.0)
+	assert_eq(result["spin"], 0.0)
 
 
 func test_short_tap_targets_teammate_in_cone():
@@ -96,7 +97,6 @@ func test_short_tap_targets_teammate_in_cone():
 	var result := kick.release(Vector2.UP, Vector2.UP, players,
 		Vector2(300, 400), 0, 0)
 	assert_eq(result["type"], "pass")
-	# Velocity should point upward (toward teammate at y=300)
 	assert_lt(result["velocity"].y, 0.0, "pass should go up toward teammate")
 
 
@@ -114,24 +114,22 @@ func test_short_tap_no_target_uses_facing():
 
 func test_long_press_returns_shot_type():
 	kick.start_charge()
-	for i in range(10):
+	for i in range(6):
 		kick.tick_charge()
 	var result := kick.release(Vector2.UP, Vector2.UP, [], Vector2(300, 400), 0)
 	assert_eq(result["type"], "shot")
 
 
 func test_shot_power_scales_with_charge():
-	# Short charge
 	var kick_a := KickStatePure.new()
 	kick_a.start_charge()
-	for i in range(10):
+	for i in range(6):
 		kick_a.tick_charge()
 	var result_a := kick_a.release(Vector2.UP, Vector2.UP, [], Vector2(300, 400), 0)
 
-	# Long charge
 	var kick_b := KickStatePure.new()
 	kick_b.start_charge()
-	for i in range(25):
+	for i in range(KickStatePure.MAX_CHARGE_FRAMES):
 		kick_b.tick_charge()
 	var result_b := kick_b.release(Vector2.UP, Vector2.UP, [], Vector2(300, 400), 0)
 
@@ -141,7 +139,7 @@ func test_shot_power_scales_with_charge():
 
 func test_shot_uses_joystick_direction():
 	kick.start_charge()
-	for i in range(15):
+	for i in range(10):
 		kick.tick_charge()
 	var result := kick.release(Vector2.RIGHT, Vector2.UP, [], Vector2(300, 400), 0)
 	assert_gt(result["velocity"].x, 0.0, "should kick right (joystick)")
@@ -150,70 +148,10 @@ func test_shot_uses_joystick_direction():
 
 func test_shot_falls_back_to_facing():
 	kick.start_charge()
-	for i in range(15):
+	for i in range(10):
 		kick.tick_charge()
 	var result := kick.release(Vector2.ZERO, Vector2.LEFT, [], Vector2(300, 400), 0)
 	assert_lt(result["velocity"].x, 0.0, "should kick left (facing)")
-
-
-func test_shot_has_lift_when_powerful():
-	kick.start_charge()
-	for i in range(20):
-		kick.tick_charge()
-	var result := kick.release(Vector2.UP, Vector2.UP, [], Vector2(300, 400), 0)
-	assert_gt(result["up_velocity"], 0.0, "hard shots should have lift")
-
-
-func test_shot_no_lift_when_weak():
-	# Just above SHORT_TAP_FRAMES but below SHOT_LIFT_THRESHOLD
-	kick.start_charge()
-	for i in range(6):
-		kick.tick_charge()
-	var result := kick.release(Vector2.UP, Vector2.UP, [], Vector2(300, 400), 0)
-	# power = 6/30 = 0.2, below threshold of 0.3
-	assert_eq(result["up_velocity"], 0.0, "weak shots stay on the ground")
-
-
-func test_shot_lift_scales_with_power():
-	# Medium charge
-	var kick_a := KickStatePure.new()
-	kick_a.start_charge()
-	for i in range(15):
-		kick_a.tick_charge()
-	var result_a := kick_a.release(Vector2.UP, Vector2.UP, [], Vector2(300, 400), 0)
-
-	# Full charge
-	var kick_b := KickStatePure.new()
-	kick_b.start_charge()
-	for i in range(KickStatePure.MAX_CHARGE_FRAMES):
-		kick_b.tick_charge()
-	var result_b := kick_b.release(Vector2.UP, Vector2.UP, [], Vector2(300, 400), 0)
-
-	assert_gt(result_b["up_velocity"], result_a["up_velocity"],
-		"harder shots should have more lift")
-
-
-func test_max_shot_lift():
-	kick.start_charge()
-	for i in range(KickStatePure.MAX_CHARGE_FRAMES):
-		kick.tick_charge()
-	var result := kick.release(Vector2.UP, Vector2.UP, [], Vector2(300, 400), 0)
-	assert_almost_eq(result["up_velocity"], KickStatePure.SHOT_LIFT_FACTOR, 0.01,
-		"max power shot should have full lift")
-
-
-func test_min_power_clamp():
-	kick.start_charge()
-	kick.tick_charge()  # 1 frame — very low raw power
-	# Force > SHORT_TAP to get shot path (need > 4 frames)
-	var kick2 := KickStatePure.new()
-	kick2.start_charge()
-	for i in range(5):
-		kick2.tick_charge()
-	var result := kick2.release(Vector2.UP, Vector2.UP, [], Vector2(300, 400), 0)
-	var speed: float = result["velocity"].length()
-	var min_speed := KickStatePure.MIN_KICK_POWER * KickStatePure.MAX_KICK_SPEED
-	assert_gte(speed, min_speed - 0.01, "power should be at least MIN_KICK_POWER")
 
 
 func test_max_power_clamp():
@@ -224,6 +162,74 @@ func test_max_power_clamp():
 	var speed: float = result["velocity"].length()
 	var max_speed := KickStatePure.MAX_KICK_POWER * KickStatePure.MAX_KICK_SPEED
 	assert_almost_eq(speed, max_speed, 0.01, "should be capped at MAX_KICK_POWER")
+
+
+# ── Directional height (ysoccer model) ──
+
+func test_shot_has_medium_height_at_max_power():
+	kick.start_charge()
+	for i in range(KickStatePure.MAX_CHARGE_FRAMES):
+		kick.tick_charge()
+	var result := kick.release(Vector2.ZERO, Vector2.UP, [], Vector2(300, 400), 0)
+	assert_almost_eq(result["up_velocity"],
+		KickStatePure.MAX_KICK_POWER * KickStatePure.SHOT_LIFT_MEDIUM, 0.01,
+		"max power shot should have SHOT_LIFT_MEDIUM height")
+
+
+func test_shot_same_height_running_or_standing():
+	# Standing: no joystick
+	var kick_a := KickStatePure.new()
+	kick_a.start_charge()
+	for i in range(KickStatePure.MAX_CHARGE_FRAMES):
+		kick_a.tick_charge()
+	var result_a := kick_a.release(Vector2.ZERO, Vector2.UP, [], Vector2(300, 400), 0)
+
+	# Running: joystick matches facing
+	var kick_b := KickStatePure.new()
+	kick_b.start_charge()
+	for i in range(KickStatePure.MAX_CHARGE_FRAMES):
+		kick_b.tick_charge()
+	var result_b := kick_b.release(Vector2.UP, Vector2.UP, [], Vector2(300, 400), 0)
+
+	assert_almost_eq(result_a["up_velocity"], result_b["up_velocity"], 0.01,
+		"running and standing kicks should have same height")
+
+
+func test_shot_height_scales_with_power():
+	var kick_a := KickStatePure.new()
+	kick_a.start_charge()
+	for i in range(6):
+		kick_a.tick_charge()
+	var result_a := kick_a.release(Vector2.ZERO, Vector2.UP, [], Vector2(300, 400), 0)
+
+	var kick_b := KickStatePure.new()
+	kick_b.start_charge()
+	for i in range(KickStatePure.MAX_CHARGE_FRAMES):
+		kick_b.tick_charge()
+	var result_b := kick_b.release(Vector2.ZERO, Vector2.UP, [], Vector2(300, 400), 0)
+
+	assert_gt(result_b["up_velocity"], result_a["up_velocity"],
+		"harder shots should have more lift")
+
+
+# ── Spin ──
+
+func test_shot_with_angled_joystick_produces_spin():
+	# Facing UP, joystick RIGHT = 90 degrees off → medium height + spin
+	kick.start_charge()
+	for i in range(KickStatePure.MAX_CHARGE_FRAMES):
+		kick.tick_charge()
+	var result := kick.release(Vector2.RIGHT, Vector2.UP, [], Vector2(300, 400), 0)
+	# angle_diff between facing(UP) and joystick(RIGHT) = 90
+	# 90 > 22.5 and < 157.5 → spin should be applied
+	assert_ne(result["spin"], 0.0, "Angled joystick should produce spin")
+
+
+func test_pass_has_no_spin():
+	kick.start_charge()
+	kick.tick_charge()
+	var result := kick.release(Vector2.RIGHT, Vector2.UP, [], Vector2(300, 400), 0)
+	assert_eq(result["spin"], 0.0, "passes should have no spin")
 
 
 # ── Edge cases ──

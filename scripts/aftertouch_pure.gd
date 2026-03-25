@@ -1,14 +1,16 @@
 class_name AftertouchPure
 extends RefCounted
 ## Pure aftertouch logic — no Node/scene tree dependencies.
-## After any kick, joystick input curls, lofts, or dips the ball for a limited window.
+## After any kick, joystick input controls loft/dip and adds spin for curl.
+## Curl is handled via spin (continuous angular deflection in BallPhysicsPure),
+## not direct velocity offset — this produces visible, gradual curves.
 
-const DECAY_RATE := 0.85
-const OPEN_PLAY_WINDOW := 12
-const SET_PIECE_WINDOW := 18
-const CURL_FACTOR := 0.15
-const LOFT_FACTOR := 0.3
-const DIP_FACTOR := 0.25
+const DECAY_RATE := 0.88
+const OPEN_PLAY_WINDOW := 16
+const SET_PIECE_WINDOW := 24
+const LOFT_FACTOR := 0.08
+const DIP_FACTOR := 0.06
+const SPIN_AFTERTOUCH_FACTOR := 2.0
 
 var timer: int = 0
 var window: int = 0
@@ -30,17 +32,17 @@ func activate(kick_dir: Vector2, is_set_piece: bool = false) -> void:
 
 ## Process one frame of aftertouch.
 ## joystick_input: 8-way quantised Vector2 from the kicking player.
-## Returns Dictionary with "velocity_offset" (Vector2) and "vertical_offset" (float).
+## Returns Dictionary with "spin_offset" (float) and "vertical_offset" (float).
 func tick(joystick_input: Vector2) -> Dictionary:
 	if not active or timer <= 0:
-		return {"velocity_offset": Vector2.ZERO, "vertical_offset": 0.0}
+		return {"spin_offset": 0.0, "vertical_offset": 0.0}
 
 	timer -= 1
 	if timer <= 0:
 		active = false
 
 	if joystick_input == Vector2.ZERO:
-		return {"velocity_offset": Vector2.ZERO, "vertical_offset": 0.0}
+		return {"spin_offset": 0.0, "vertical_offset": 0.0}
 
 	# Decay: strength is strongest at frame 0, decays each elapsed frame
 	var frames_elapsed := window - timer - 1
@@ -52,8 +54,8 @@ func tick(joystick_input: Vector2) -> Dictionary:
 	var parallel_component := joystick_input.dot(kick_direction)
 	var perp_component := joystick_input.dot(perpendicular)
 
-	# Lateral curl from perpendicular input
-	var velocity_offset := perpendicular * perp_component * CURL_FACTOR * strength
+	# Spin from perpendicular input (curl via spin system)
+	var spin_offset := perp_component * SPIN_AFTERTOUCH_FACTOR * strength
 
 	# Vertical effects from parallel component
 	var vertical_offset := 0.0
@@ -64,7 +66,7 @@ func tick(joystick_input: Vector2) -> Dictionary:
 		# Same as travel direction = dip
 		vertical_offset = -parallel_component * DIP_FACTOR * strength
 
-	return {"velocity_offset": velocity_offset, "vertical_offset": vertical_offset}
+	return {"spin_offset": spin_offset, "vertical_offset": vertical_offset}
 
 
 ## Cancel aftertouch immediately.

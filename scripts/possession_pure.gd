@@ -5,16 +5,16 @@ extends RefCounted
 ## team affiliation, and goalkeeper rules.
 
 # --- Radii and distances ---
-const PICKUP_RADIUS := 10.0
-const DRIBBLE_RADIUS := 14.0
-const DRIBBLE_OFFSET := 6.0
+const PICKUP_RADIUS := 8.0
+const DRIBBLE_RADIUS := 12.0
+const DRIBBLE_OFFSET := 5.0
 const DRIBBLE_LERP_FACTOR := 0.4
-const GK_PICKUP_RADIUS := 18.0
+const GK_PICKUP_RADIUS := 15.0
 
 # --- Thresholds ---
 const MIN_HEIGHT_FOR_PICKUP := 8.0
 const GK_MAX_CATCH_HEIGHT := 60.0
-const LOOSE_BALL_SPEED_THRESHOLD := 4.0
+const LOOSE_BALL_SPEED_THRESHOLD := 2.5
 const PICKUP_DAMPING := 0.3
 
 # --- Linger ---
