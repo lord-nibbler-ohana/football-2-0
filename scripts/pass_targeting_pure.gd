@@ -2,12 +2,12 @@ class_name PassTargetingPure
 extends RefCounted
 ## Pure pass targeting logic — finds best teammate in a cone for auto-targeted passes.
 
-const PASS_CONE_HALF_ANGLE := deg_to_rad(30.0)
-const AIM_ASSIST_ANGLE := deg_to_rad(15.0)
-const TOTAL_CONE_HALF := PASS_CONE_HALF_ANGLE + AIM_ASSIST_ANGLE  # 45 degrees
+const PASS_CONE_HALF_ANGLE := deg_to_rad(40.0)
+const AIM_ASSIST_ANGLE := deg_to_rad(20.0)
+const TOTAL_CONE_HALF := PASS_CONE_HALF_ANGLE + AIM_ASSIST_ANGLE  # 60 degrees
 const BLOCKED_LANE_PENALTY := 500.0
-const MAX_PASS_POWER := 0.5
-const MIN_PASS_POWER := 0.15
+const MAX_PASS_POWER := 0.85
+const MIN_PASS_POWER := 0.30
 const MIN_PASS_DISTANCE := 20.0
 const MAX_PASS_DISTANCE := 300.0
 const LANE_WIDTH := 15.0

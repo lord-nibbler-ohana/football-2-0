@@ -254,14 +254,12 @@ func _tick_on_ball(context: Dictionary) -> Dictionary:
 	if under_pressure < AiConstants.PRESSURE_DISTANCE \
 			and on_ball_frames >= AiConstants.PRESSURE_PASS_FRAMES:
 		_has_decided_kick = true
-		# Pass forward in attack direction (auto-targeted finds best teammate)
-		return _make_pass_result(attack_dir)
+		return _make_pass_result(attack_dir, context)
 
 	# 4. CROSS — winger near opponent goal, cross into the box
 	if _is_wing_role(my_role) and dist_to_goal < AiConstants.CROSS_RANGE:
 		if on_ball_frames >= AiConstants.PRESSURE_PASS_FRAMES:
 			_has_decided_kick = true
-			# Aim cross toward far post area
 			var cross_dir := _compute_cross_direction(my_pos, goal_center, attack_dir)
 			return {
 				"velocity": cross_dir.normalized() * 0.3,
@@ -272,21 +270,21 @@ func _tick_on_ball(context: Dictionary) -> Dictionary:
 
 	# 5. WING PASS — if in central area, play ball out wide
 	if _is_central(my_pos) and on_ball_frames >= _dribble_target_frames / 2:
-		if randf() < 0.4:  # 40% chance each frame to pass wide vs continue
+		if randf() < 0.4:
 			var wing_dir := _find_wing_direction(my_pos, attack_dir)
 			if wing_dir != Vector2.ZERO:
 				_has_decided_kick = true
-				return _make_pass_result(wing_dir)
+				return _make_pass_result(wing_dir, context)
 
 	# 6. NORMAL PASS — dribble timer expired, pass forward
 	if on_ball_frames >= _dribble_target_frames:
 		_has_decided_kick = true
-		return _make_pass_result(attack_dir)
+		return _make_pass_result(attack_dir, context)
 
 	# 7. FORCED PASS — absolute max dribble time, must pass now
 	if on_ball_frames >= AiConstants.DRIBBLE_MAX_FRAMES:
 		_has_decided_kick = true
-		return _make_pass_result(attack_dir)
+		return _make_pass_result(attack_dir, context)
 
 	# 8. DRIBBLE — carry ball forward
 	return _dribble_result(my_pos, attack_dir, goal_center)
@@ -305,14 +303,64 @@ func _dribble_result(my_pos: Vector2, attack_dir: Vector2,
 	}
 
 
-## Build a pass result dict (tap pass = auto-targeted by PassTargetingPure).
-func _make_pass_result(direction: Vector2) -> Dictionary:
+## Build a pass result dict aimed at the best available teammate.
+## Falls back to the given direction if no teammate found.
+func _make_pass_result(fallback_dir: Vector2, context: Dictionary = {}) -> Dictionary:
+	var pass_dir := fallback_dir
+	if context.size() > 0:
+		var smart_dir := _find_best_pass_direction(context)
+		if smart_dir != Vector2.ZERO:
+			pass_dir = smart_dir
 	return {
-		"velocity": direction.normalized() * 0.3,
+		"velocity": pass_dir.normalized() * 0.3,
 		"kick_action": "pass",
-		"kick_direction": direction,
+		"kick_direction": pass_dir,
 		"kick_charge": 1,
 	}
+
+
+## Find the best teammate to pass to and return the direction toward them.
+## Uses a wide forward hemisphere (120°) — much broader than the pass cone.
+## Returns Vector2.ZERO if no suitable target found.
+func _find_best_pass_direction(context: Dictionary) -> Vector2:
+	var my_pos: Vector2 = context["my_position"]
+	var my_team_id: int = context["my_team_id"]
+	var attack_dir: Vector2 = context["attack_direction"]
+	var all_players: Array = context["all_players"]
+	var attack_angle := attack_dir.angle()
+
+	var best_score := INF
+	var best_dir := Vector2.ZERO
+
+	for p in all_players:
+		if int(p["team_id"]) != my_team_id:
+			continue
+		var mate_pos: Vector2 = Vector2(p["position"])
+		var to_mate := mate_pos - my_pos
+		var dist: float = to_mate.length()
+
+		# Skip self (very close) or too far
+		if dist < 25.0 or dist > 350.0:
+			continue
+
+		var angle_to_mate := to_mate.angle()
+		var angle_diff: float = absf(angle_difference(attack_angle, angle_to_mate))
+
+		# Accept teammates in a wide 120° forward hemisphere
+		if angle_diff > deg_to_rad(120.0):
+			continue
+
+		# Score: prefer forward teammates, penalize distance modestly
+		# Lower angle_diff = more forward = better
+		var forward_bonus: float = angle_diff * 100.0  # Strongly prefer forward
+		var dist_penalty: float = dist * 0.5
+		var score: float = forward_bonus + dist_penalty
+
+		if score < best_score:
+			best_score = score
+			best_dir = to_mate.normalized()
+
+	return best_dir
 
 
 ## Distance to nearest opponent.

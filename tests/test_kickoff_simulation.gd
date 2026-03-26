@@ -143,7 +143,26 @@ func _update_teammate_flags() -> void:
 
 
 func _update_possession() -> void:
-	# Simple proximity possession
+	# Simple proximity possession — skip if ball is moving fast (just kicked)
+	if ball_vel.length() > 2.5:
+		# Ball too fast for pickup — only very close players can intercept
+		var closest_idx := -1
+		var closest_dist := INF
+		for i in range(players.size()):
+			var p: Dictionary = players[i]
+			if int(p["kick_cooldown"]) > 0:
+				continue
+			var dist: float = p["pos"].distance_to(ball_pos)
+			if dist < 5.0 and dist < closest_dist:  # Very tight radius for fast ball
+				closest_dist = dist
+				closest_idx = i
+		for p in players:
+			p["has_possession"] = false
+		if closest_idx >= 0:
+			players[closest_idx]["has_possession"] = true
+		return
+
+	# Normal proximity possession for slow/stationary ball
 	var closest_idx := -1
 	var closest_dist := INF
 	for i in range(players.size()):
@@ -219,20 +238,24 @@ func _sim_frame() -> Dictionary:
 		p["pos"].x = clampf(p["pos"].x, 42.0, 558.0)
 		p["pos"].y = clampf(p["pos"].y, 42.0, 678.0)
 
-		# Handle kick
+		# Handle kick — ball gets velocity, kicker loses possession + cooldown
 		var kick_action: String = result.get("kick_action", "none")
 		if kick_action != "none" and p["has_possession"]:
 			var kick_dir: Vector2 = result.get("kick_direction", Vector2.UP)
-			var charge: int = int(result.get("kick_charge", 1))
-			var speed := 4.0 if kick_action == "pass" else 6.0
+			if kick_dir.length() < 0.01:
+				kick_dir = Vector2.UP
+			var speed := 5.0 if kick_action == "pass" else 7.0
 			ball_vel = kick_dir.normalized() * speed
 			p["has_possession"] = false
 			p["kick_cooldown"] = 15
 			kick_info = {"player": _label(p), "action": kick_action, "frame": -1}
+			# Don't let dribble overwrite ball_pos this frame
+			continue
 
 		# Dribble: ball follows possessor
 		if p["has_possession"]:
 			ball_pos = p["pos"] + p["vel"].normalized() * DRIBBLE_OFFSET if p["vel"].length() > 0.01 else p["pos"]
+			ball_vel = Vector2.ZERO  # Ball moves with player during dribble
 
 	return kick_info
 
@@ -365,6 +388,45 @@ func test_players_spread_after_50_frames():
 		var avg_dist := total_dist / float(pair_count) if pair_count > 0 else 0.0
 		assert_gt(avg_dist, 50.0,
 			"%s team avg player spread should be > 50px (got %.1f)" % [team_label, avg_dist])
+
+
+func test_passes_happen_in_200_frames():
+	## In 200 frames of CPU vs CPU, at least 3 passes should occur.
+	var pass_count := 0
+	var kick_count := 0
+
+	for _frame in range(200):
+		var info := _sim_frame()
+		if info.size() > 0:
+			kick_count += 1
+			if info["action"] == "pass":
+				pass_count += 1
+
+	gut.p("In 200 frames: %d kicks total, %d passes" % [kick_count, pass_count])
+	assert_gt(pass_count, 2,
+		"At least 3 passes in 200 frames (got %d passes, %d total kicks)" % [pass_count, kick_count])
+
+
+func test_ball_travels_distance_on_pass():
+	## After a pass, the ball should travel at least 40px total.
+	## Track maximum distance the ball reaches from any kick origin.
+	var max_travel := 0.0
+	var last_kick_pos := ball_pos
+	var kick_count := 0
+
+	for _frame in range(300):
+		var info := _sim_frame()
+		if info.size() > 0:
+			last_kick_pos = ball_pos
+			kick_count += 1
+		if kick_count > 0:
+			var travel: float = ball_pos.distance_to(last_kick_pos)
+			if travel > max_travel:
+				max_travel = travel
+
+	gut.p("Max ball travel from any kick: %.1f px (%d kicks)" % [max_travel, kick_count])
+	assert_gt(max_travel, 40.0,
+		"Ball should travel at least 40px from a kick (got %.1f)" % max_travel)
 
 
 func test_trace_full_kickoff():
