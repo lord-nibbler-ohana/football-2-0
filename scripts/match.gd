@@ -105,6 +105,7 @@ func _physics_process(delta: float) -> void:
 			_update_chasers()
 			_update_teammate_flags()
 			_update_possession()
+			_check_tackles()
 			_enforce_boundaries()
 		MatchStatePure.State.KICKOFF_SETUP:
 			_reset_to_kickoff()
@@ -124,44 +125,34 @@ func _update_possession() -> void:
 	if selected_player and selected_player.is_fire_held():
 		passthrough_team_id = selected_player.team_id
 
-	# Build player_infos, filtering out passthrough teammates and cooldown players
+	# Build player_infos for ALL players, marking eligibility.
+	# All players are included so that PossessionPure.possessor_index stays
+	# stable across frames (no filtered-array index drift).
 	var player_infos: Array = []
-	var index_map: Array = []  # Maps filtered index -> all_players index
 	for i in range(all_players.size()):
 		var player: CharacterBody2D = all_players[i]
-
-		# Skip players with post-kick cooldown (prevents immediate re-possession)
+		var eligible := true
 		if player.has_kick_cooldown():
-			continue
-
-		# Skip players stunned from losing the ball (prevents ping-pong possession)
+			eligible = false
 		if player.has_loss_stun():
-			continue
-
-		# Skip same-team non-kicker players during passthrough
+			eligible = false
 		if passthrough_team_id >= 0 \
 				and player.team_id == passthrough_team_id \
 				and player != selected_player:
-			continue
-
+			eligible = false
 		player_infos.append({
 			"position": player.global_position,
 			"team_id": player.team_id,
 			"is_goalkeeper": player.is_goalkeeper,
 			"velocity": player.velocity / 50.0,  # Convert to px/frame
+			"eligible": eligible,
 		})
-		index_map.append(i)
 
 	var ball_height: float = ball.physics.height
 	var ball_speed: float = ball.physics.get_ground_speed()
 
-	var possessor_filtered_idx := possession.check_possession(
+	var possessor_idx := possession.check_possession(
 		player_infos, ball.global_position, ball_height, ball_speed)
-
-	# Map filtered index back to all_players index
-	var possessor_idx := -1
-	if possessor_filtered_idx >= 0 and possessor_filtered_idx < index_map.size():
-		possessor_idx = index_map[possessor_filtered_idx]
 
 	# Clear old possession flags
 	for player in all_players:
@@ -355,6 +346,45 @@ func _update_teammate_flags() -> void:
 	for player in all_players:
 		player._teammate_has_ball = (possessing_team == player.team_id \
 			and not player.has_possession)
+
+
+## Check for AI tackles: opponents near ball carrier can force dispossession.
+## Knocks the ball loose by applying a small velocity impulse, breaking the
+## dribble leash. Only AI chasers can tackle (not human-controlled players).
+func _check_tackles() -> void:
+	# Find current possessor
+	var possessor: CharacterBody2D = null
+	for player in all_players:
+		if player.has_possession:
+			possessor = player
+			break
+	if not possessor:
+		return
+
+	# Check if any opponent chaser is within tackle range
+	for player in all_players:
+		if player.team_id == possessor.team_id:
+			continue
+		if player.is_goalkeeper:
+			continue
+		if not player._is_chaser:
+			continue
+		if player.has_kick_cooldown() or player.has_loss_stun():
+			continue
+		var dist: float = player.global_position.distance_to(ball.global_position)
+		if dist > AiConstants.TACKLE_RANGE:
+			continue
+
+		# Roll for tackle success
+		if randf() < AiConstants.TACKLE_SUCCESS_CHANCE:
+			# Knock ball loose — push it away from tackler
+			var knock_dir: Vector2 = (ball.global_position - player.global_position).normalized()
+			if knock_dir.length() < 0.1:
+				knock_dir = possessor.facing_direction
+			ball.kick(knock_dir * 2.5, 0.0, player)
+			possessor.has_possession = false
+			possessor.kick_cooldown = possessor.KICK_COOLDOWN_FRAMES
+			break  # Only one tackle per frame
 
 
 # ── Throw-in ────────────────────────────────────────────────────────────────

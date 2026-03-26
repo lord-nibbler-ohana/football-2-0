@@ -68,8 +68,8 @@ var kick_cooldown: int = 0
 
 ## Loss-of-possession stun — brief stutter when dispossessed (not from kicking).
 ## Prevents rapid back-and-forth possession ping-pong in AI games.
-const LOSS_STUN_FRAMES := 50  ## 1.0s at 50 Hz
-const LOSS_STUN_SPEED_FACTOR := 0.25  ## Movement speed multiplier during stun
+const LOSS_STUN_FRAMES := 25  ## 0.5s at 50 Hz
+const LOSS_STUN_SPEED_FACTOR := 0.35  ## Movement speed multiplier during stun
 var loss_stun: int = 0
 var _had_possession_last_frame: bool = false
 

@@ -51,7 +51,8 @@ func before_each() -> void:
 			"slot": i, "has_possession": false, "is_selected": false,
 			"is_chaser": false, "teammate_has_ball": false,
 			"formation_pos": Vector2(slot["position"]), "is_home": true,
-			"kick_cooldown": 0,
+			"kick_cooldown": 0, "loss_stun": 0,
+			"had_possession": false,
 		})
 		if is_gk:
 			home_gk_ai = GoalkeeperAiPure.new()
@@ -69,7 +70,8 @@ func before_each() -> void:
 			"slot": i, "has_possession": false, "is_selected": false,
 			"is_chaser": false, "teammate_has_ball": false,
 			"formation_pos": Vector2(slot["position"]), "is_home": false,
-			"kick_cooldown": 0,
+			"kick_cooldown": 0, "loss_stun": 0,
+			"had_possession": false,
 		})
 		if is_gk:
 			away_gk_ai = GoalkeeperAiPure.new()
@@ -150,7 +152,7 @@ func _update_possession() -> void:
 		var closest_dist := INF
 		for i in range(players.size()):
 			var p: Dictionary = players[i]
-			if int(p["kick_cooldown"]) > 0:
+			if int(p["kick_cooldown"]) > 0 or int(p["loss_stun"]) > 0:
 				continue
 			var dist: float = p["pos"].distance_to(ball_pos)
 			if dist < 5.0 and dist < closest_dist:  # Very tight radius for fast ball
@@ -167,7 +169,7 @@ func _update_possession() -> void:
 	var closest_dist := INF
 	for i in range(players.size()):
 		var p: Dictionary = players[i]
-		if int(p["kick_cooldown"]) > 0:
+		if int(p["kick_cooldown"]) > 0 or int(p["loss_stun"]) > 0:
 			continue
 		var dist: float = p["pos"].distance_to(ball_pos)
 		var radius := 15.0 if p["is_gk"] else PICKUP_RADIUS
@@ -212,6 +214,14 @@ func _sim_frame() -> Dictionary:
 		var p: Dictionary = players[i]
 		if int(p["kick_cooldown"]) > 0:
 			p["kick_cooldown"] = int(p["kick_cooldown"]) - 1
+		if int(p["loss_stun"]) > 0:
+			p["loss_stun"] = int(p["loss_stun"]) - 1
+
+		# Detect dispossession -> apply loss stun
+		if p["had_possession"] and not p["has_possession"] \
+				and int(p["kick_cooldown"]) == 0:
+			p["loss_stun"] = 25  # LOSS_STUN_FRAMES
+		p["had_possession"] = p["has_possession"]
 
 		var ctx := _context(p)
 		var result: Dictionary
@@ -226,10 +236,11 @@ func _sim_frame() -> Dictionary:
 				continue
 			result = ai.tick(ctx)
 
-		# Apply movement
+		# Apply movement (slowed during loss stun)
 		var vel: Vector2 = result.get("velocity", Vector2.ZERO)
+		var speed_mult := 0.35 if int(p["loss_stun"]) > 0 else 1.0
 		if vel.length() > 0.01:
-			p["vel"] = vel.normalized() * PLAYER_SPEED
+			p["vel"] = vel.normalized() * PLAYER_SPEED * speed_mult
 			p["pos"] += p["vel"]
 		else:
 			p["vel"] = Vector2.ZERO

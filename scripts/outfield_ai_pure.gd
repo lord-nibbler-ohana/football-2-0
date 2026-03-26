@@ -269,8 +269,8 @@ func _tick_on_ball(context: Dictionary) -> Dictionary:
 			}
 
 	# 5. WING PASS — if in central area, play ball out wide
-	if _is_central(my_pos) and on_ball_frames >= _dribble_target_frames / 2:
-		if randf() < 0.4:
+	if _is_central(my_pos) and on_ball_frames >= AiConstants.PRESSURE_PASS_FRAMES:
+		if randf() < 0.7:
 			var wing_dir := _find_wing_direction(my_pos, attack_dir)
 			if wing_dir != Vector2.ZERO:
 				_has_decided_kick = true
@@ -359,6 +359,24 @@ func _find_best_pass_direction(context: Dictionary) -> Vector2:
 		if score < best_score:
 			best_score = score
 			best_dir = to_mate.normalized()
+
+	# Fallback: if no forward target, search full 360° (backward pass)
+	if best_dir == Vector2.ZERO:
+		for p in all_players:
+			if int(p["team_id"]) != my_team_id:
+				continue
+			var mate_pos: Vector2 = Vector2(p["position"])
+			var to_mate := mate_pos - my_pos
+			var dist: float = to_mate.length()
+			if dist < 25.0 or dist > 350.0:
+				continue
+			var angle_to_mate := to_mate.angle()
+			var angle_diff: float = absf(angle_difference(attack_angle, angle_to_mate))
+			# Heavy penalty for backward passes to prefer forward when possible
+			var score: float = angle_diff * 200.0 + dist * 0.5
+			if score < best_score:
+				best_score = score
+				best_dir = to_mate.normalized()
 
 	return best_dir
 

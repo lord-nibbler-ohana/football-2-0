@@ -16,13 +16,13 @@ const CHASER_SWITCH_HYSTERESIS := 15.0  ## px — don't switch unless clearly cl
 
 ## On-ball timing (50 Hz tick rate).
 const REACTION_DELAY := 15  ## Frames before first kick decision (0.3s)
-const DRIBBLE_MIN_FRAMES := 50  ## Minimum dribble before passing (1.0s)
-const DRIBBLE_MAX_FRAMES := 150  ## Maximum dribble — force a pass (3.0s)
-const PRESSURE_PASS_FRAMES := 25  ## Pass sooner when opponent nearby (0.5s)
+const DRIBBLE_MIN_FRAMES := 20  ## Minimum dribble before passing (0.4s)
+const DRIBBLE_MAX_FRAMES := 75  ## Maximum dribble — force a pass (1.5s)
+const PRESSURE_PASS_FRAMES := 15  ## Pass sooner when opponent nearby (0.3s)
 const GK_HOLD_FRAMES := 25  ## Frames GK holds ball before distributing (0.5s)
 
 ## Shooting.
-const SHOOT_RANGE := 180.0  ## px from goal center
+const SHOOT_RANGE := 140.0  ## px from goal center
 const MIN_SHOOT_ANGLE_DEG := 10.0  ## Degrees of goal mouth visible
 const SHOT_CHARGE_MIN := 8  ## Frames
 const SHOT_CHARGE_MAX := 12  ## Frames
@@ -31,7 +31,7 @@ const SHOT_AIM_RANDOMNESS := 20.0  ## px offset from goal center
 ## Passing.
 const PANIC_CLEAR_DISTANCE := 30.0  ## Opponent proximity triggers clear
 const PANIC_CLEAR_CHARGE := 6  ## Frames of charge for clearance
-const PRESSURE_DISTANCE := 50.0  ## Opponent this close triggers early forward pass
+const PRESSURE_DISTANCE := 80.0  ## Opponent this close triggers early forward pass
 const WING_PASS_X_THRESHOLD := 180.0  ## If ball is central (within this of center X), consider wing pass
 const WING_TARGET_X_OFFSET := 180.0  ## How far wide the wing pass target is from center
 const CROSS_RANGE := 200.0  ## px from goal — winger should cross instead of dribble

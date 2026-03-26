@@ -58,6 +58,11 @@ func check_possession(player_infos: Array, ball_pos: Vector2,
 
 	for i in range(player_infos.size()):
 		var info: Dictionary = player_infos[i]
+
+		# Skip ineligible players (stunned, cooldown, passthrough)
+		if not info.get("eligible", true):
+			continue
+
 		var is_gk: bool = info.get("is_goalkeeper", false)
 
 		# Height check
