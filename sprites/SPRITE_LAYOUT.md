@@ -30,6 +30,8 @@ Cell size: 16x32 pixels, 10 columns per row.
 | 15-19 | Kick (= idle, 1 frame each) | S, SE, E, NE, N |
 | 20-27 | Slide (1 frame each) | S, SE, E, NE, N, W, SW, NW |
 | 28-35 | Down/knocked (1 frame each) | N, S, SE, NE, E, W, SW, NW |
+| 36-56 | Heading (3 frames each) | S, E, W, SW, SE, NW, NE |
+| 57-77 | Throw-in (3 frames each) | S, E, W, SW, SE, NW, NE |
 
 ## ANIM_MAP Reference
 
@@ -39,7 +41,17 @@ Cell size: 16x32 pixels, 10 columns per row.
 "kick_s": [15], "kick_se": [16], "kick_e": [17], "kick_ne": [18], "kick_n": [19]
 "slide_s": [20], "slide_se": [21], "slide_e": [22], "slide_ne": [23], "slide_n": [24]
 "knocked_down": [28], "getting_up": [28, 29], "celebrate": [10, 14, 12]
+"head_s": [36,37,38], "head_e": [39,40,41], "head_w": [42,43,44]
+"head_sw": [45,46,47], "head_se": [48,49,50], "head_nw": [51,52,53], "head_ne": [54,55,56]
+"throwin_s": [57,58,59], "throwin_e": [60,61,62], "throwin_w": [63,64,65]
+"throwin_sw": [66,67,68], "throwin_se": [69,70,71], "throwin_nw": [72,73,74], "throwin_ne": [75,76,77]
 ```
+
+## Throw-in Ball Visibility
+
+For throw-in animations, the ball should be hidden on frames 1-2 and visible on frame 3 (index 2).
+The ball sprite in frame 3 is baked into the player sprite — at runtime, the real ball entity
+should be positioned at release on frame 3 and hidden during frames 1-2.
 
 ## Kit Variants
 

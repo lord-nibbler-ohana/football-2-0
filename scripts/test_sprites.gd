@@ -1,6 +1,6 @@
 extends Node2D
 ## Temporary debug scene: displays player sprites from the packed sprite sheet
-## grouped by animation type and direction, with animated run pairs.
+## grouped by animation type and direction, with animated run pairs and triples.
 ## Run with:  godot --path . res://scenes/test_sprites.tscn
 
 const SCALE := 4
@@ -15,19 +15,22 @@ const COLS := 10
 ## Labels for direction pairs: S, SE, E, NE, N
 const DIR_LABELS := ["S", "SE", "E", "NE", "N"]
 
+## Labels for heading/throw-in directions (7 directions, all explicit)
+const HEAD_THROWIN_DIRS := ["S", "E", "W", "SW", "SE", "NW", "NE"]
+
 var _anim_frame := 0
-var _anim_pairs: Array = []
+var _anim_groups: Array = []  # Each entry: Array of Sprite2D nodes (2 or 3 frames)
 
 
 func _ready() -> void:
-	get_window().size = Vector2i(1200, 900)
+	get_window().size = Vector2i(1200, 1400)
 	get_tree().root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
 
 	var tex: Texture2D = load("res://sprites/players/player_solid.png")
 
 	var bg := ColorRect.new()
 	bg.color = Color(0.15, 0.15, 0.15, 1.0)
-	bg.size = Vector2(1200, 900)
+	bg.size = Vector2(1200, 1400)
 	bg.z_index = -1
 	add_child(bg)
 
@@ -39,7 +42,7 @@ func _ready() -> void:
 	for i in range(5):
 		var c0 := i * 2
 		var c1 := c0 + 1
-		_add_animated_pair(tex, c0, c1, DIR_LABELS[i], 10 + i * (CELL_W * 2 * SCALE + PAIR_GAP + COL_SPACING), y)
+		_add_animated_group(tex, [c0, c1], DIR_LABELS[i], 10 + i * (CELL_W * 2 * SCALE + PAIR_GAP + COL_SPACING), y)
 	y += CELL_H * SCALE + SECTION_GAP
 
 	# --- Idle (cells 10-14) ---
@@ -73,6 +76,25 @@ func _ready() -> void:
 			var cell := base + f
 			if cell < 49:
 				_add_single_sprite(tex, cell, slide_dirs[d] + str(f), 10 + (d * 3 + f) * (CELL_W * SCALE + 8), y)
+	y += CELL_H * SCALE + SECTION_GAP
+
+	# --- Heading (cells 36-56): 3-frame animated, 7 directions ---
+	_add_label("HEADING (cells 36-56) — 3-frame animated, 7 directions", 10, y)
+	y += 20
+	for i in range(HEAD_THROWIN_DIRS.size()):
+		var base := 36 + i * 3
+		var cells := [base, base + 1, base + 2]
+		_add_animated_group(tex, cells, HEAD_THROWIN_DIRS[i], 10 + i * (CELL_W * SCALE + COL_SPACING + 16), y)
+	y += CELL_H * SCALE + SECTION_GAP
+
+	# --- Throw-in (cells 57-77): 3-frame animated, 7 directions ---
+	_add_label("THROW-IN (cells 57-77) — 3-frame, ball visible on frame 3 only", 10, y)
+	y += 20
+	for i in range(HEAD_THROWIN_DIRS.size()):
+		var base := 57 + i * 3
+		var cells := [base, base + 1, base + 2]
+		_add_animated_group(tex, cells, HEAD_THROWIN_DIRS[i], 10 + i * (CELL_W * SCALE + COL_SPACING + 16), y)
+	y += CELL_H * SCALE + SECTION_GAP
 
 	# Timer for animation
 	var timer := Timer.new()
@@ -117,13 +139,12 @@ func _add_single_sprite(tex: Texture2D, cell: int, label_text: String, x: int, y
 	add_child(lbl)
 
 
-func _add_animated_pair(tex: Texture2D, cell0: int, cell1: int, label_text: String, x: int, y: int) -> void:
-	var pair: Array = []
-	for i in range(2):
-		var cell := cell0 if i == 0 else cell1
+func _add_animated_group(tex: Texture2D, cells: Array, label_text: String, x: int, y: int) -> void:
+	var group: Array = []
+	for i in range(cells.size()):
 		var atlas := AtlasTexture.new()
 		atlas.atlas = tex
-		atlas.region = _cell_region(cell)
+		atlas.region = _cell_region(cells[i])
 		var spr := Sprite2D.new()
 		spr.texture = atlas
 		spr.centered = false
@@ -132,11 +153,12 @@ func _add_animated_pair(tex: Texture2D, cell0: int, cell1: int, label_text: Stri
 		spr.position = Vector2(x, y)
 		spr.visible = (i == 0)
 		add_child(spr)
-		pair.append(spr)
-	_anim_pairs.append(pair)
+		group.append(spr)
+	_anim_groups.append(group)
 
+	var cell_labels := ",".join(cells.map(func(c): return str(c)))
 	var lbl := Label.new()
-	lbl.text = "%s [%d,%d]" % [label_text, cell0, cell1]
+	lbl.text = "%s [%s]" % [label_text, cell_labels]
 	lbl.position = Vector2(x, y + CELL_H * SCALE + 2)
 	lbl.add_theme_font_size_override("font_size", 10)
 	lbl.add_theme_color_override("font_color", Color.YELLOW)
@@ -144,11 +166,11 @@ func _add_animated_pair(tex: Texture2D, cell0: int, cell1: int, label_text: Stri
 
 
 func _toggle_anim() -> void:
-	_anim_frame = 1 - _anim_frame
-	for pair in _anim_pairs:
-		if pair.size() == 2:
-			pair[0].visible = (_anim_frame == 0)
-			pair[1].visible = (_anim_frame == 1)
+	_anim_frame += 1
+	for group in _anim_groups:
+		var count: int = group.size()
+		for i in range(count):
+			group[i].visible = (i == _anim_frame % count)
 
 
 func _process(delta: float) -> void:
