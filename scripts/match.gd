@@ -30,6 +30,12 @@ func _ready() -> void:
 	# Wire camera to ball
 	camera.ball = ball
 
+	# Wire ball reference to goals for ball-over-goal compositing
+	if has_node("GoalTop"):
+		$GoalTop.ball = ball
+	if has_node("GoalBottom"):
+		$GoalBottom.ball = ball
+
 	# Set ball to pitch center before match starts
 	ball.position = PitchGeometry.CENTER
 

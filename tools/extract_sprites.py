@@ -118,29 +118,173 @@ def find_sprites_in_region(data, x_start, y_start, width, height, bg_index=0):
     return sprites
 
 
-def extract_player_sprites(filename):
-    """Extract all player sprites from a team sprite sheet.
+def _extract_column_half(data, col_idx, half, bg_index=0):
+    """Extract one sprite from a 16px column, top or bottom half of y=0-31.
 
-    Returns a list of (x, y, w, h) bounding boxes for each sprite found.
+    The original Amiga sheet packs TWO sprites per column in the first band:
+      top half: y≈0-15  (row 1: cardinal directions + slides)
+      bot half: y≈16-31 (row 2: diagonal directions + down sprites)
+
+    Uses vertical gap detection to split, then returns tight bounding box.
+    """
+    x = col_idx * 16
+    col_w = 16
+    x_end = min(x + col_w, data.shape[1])
+    region = data[0:32, x:x_end]
+    mask = region != bg_index
+
+    if not mask.any():
+        return None
+
+    # Find vertical sub-sprites by gap detection
+    row_has = np.any(mask, axis=1)
+    in_sprite = False
+    sprites_y = []
+    sy = 0
+    for y in range(32):
+        if row_has[y] and not in_sprite:
+            sy = y
+            in_sprite = True
+        elif not row_has[y] and in_sprite:
+            sprites_y.append((sy, y))
+            in_sprite = False
+    if in_sprite:
+        sprites_y.append((sy, 32))
+
+    idx = 0 if half == "top" else 1
+    if idx >= len(sprites_y):
+        return None
+
+    y0, y1 = sprites_y[idx]
+    sub_mask = mask[y0:y1, :]
+    cols_any = np.any(sub_mask, axis=0)
+    c = np.where(cols_any)[0]
+    if len(c) == 0:
+        return None
+
+    sx, ex = c[0], c[-1] + 1
+    return (x + sx, y0, ex - sx, y1 - y0)
+
+
+def _extract_band_sprite(data, col_idx, y_start, band_h, bg_index=0):
+    """Extract a single sprite from a 16px column in a lower band (y=32+)."""
+    x = col_idx * 16
+    x_end = min(x + 16, data.shape[1])
+    y_end = min(y_start + band_h, data.shape[0])
+    region = data[y_start:y_end, x:x_end]
+    mask = region != bg_index
+
+    if not mask.any():
+        return None
+
+    rows_any = np.any(mask, axis=1)
+    cols_any = np.any(mask, axis=0)
+    r = np.where(rows_any)[0]
+    c = np.where(cols_any)[0]
+    return (x + c[0], y_start + r[0], c[-1] - c[0] + 1, r[-1] - r[0] + 1)
+
+
+def extract_player_sprites_semantic(filename):
+    """Extract player sprites using the known layout of cjcteam1/2/3.
+
+    The original Amiga sheet (320×256) packs TWO sprite rows into the first
+    32px band (y=0-31), with a 1-2px vertical gap between them:
+
+      Top half (y≈0-15) — Row 1: Cardinal directions + slides
+        Col: 0=FN  1=N1  2=N2  3=FS  4=S1  5=S2  6=FE  7=E1  8=E2
+             9=FW 10=W1 11=W2 12=SlN 13=SlS 14=SlW 15=SlE
+            16=SlSW 17=SlSE 18=SlNW 19=SlNE
+
+      Bot half (y≈16-31) — Row 2: Diagonal directions + down sprites
+        Col: 0=FSW  1=SW1  2=SW2  3=FSE  4=SE1  5=SE2  6=FNW  7=NW1  8=NW2
+             9=FNE 10=NE1 11=NE2 12=DnN 13=DnS 14=DnW 15=DnE
+            16=DnSW 17=DnSE 18=DnNW 19=DnNE
+
+    Lower bands (y=32+) contain throw-in, tackle, and other animations.
+
+    Returns (ordered_sprites, img) for packing into the game sprite sheet.
     """
     img = Image.open(os.path.join(ORIGINAL_DIR, filename))
     data = np.array(img)
 
-    all_sprites = []
+    def pick_top(col, label):
+        s = _extract_column_half(data, col, "top", BG_INDEX)
+        if s:
+            print(f"    [{label:12s}] x={s[0]:3d} y={s[1]:3d} w={s[2]:2d} h={s[3]:2d}")
+        else:
+            print(f"    [{label:12s}] WARNING: empty top col {col}")
+            s = (col * 16, 0, 1, 1)
+        return s
 
-    # Band 0 (y=0-30): Upright sprites (running, standing, kicking)
-    # These are in 16px-wide columns
-    sprites_band0 = find_sprites_in_region(data, 0, 0, 320, 31, BG_INDEX)
-    all_sprites.extend(sprites_band0)
+    def pick_bot(col, label):
+        s = _extract_column_half(data, col, "bot", BG_INDEX)
+        if s:
+            print(f"    [{label:12s}] x={s[0]:3d} y={s[1]:3d} w={s[2]:2d} h={s[3]:2d}")
+        else:
+            print(f"    [{label:12s}] WARNING: empty bot col {col}")
+            s = (col * 16, 16, 1, 1)
+        return s
 
-    # Bands 1-8 (y=32,56,80,...,200): Direction-specific sprites
-    # Each at 24px intervals, ~19px tall
-    for band_idx in range(8):
-        y_start = 32 + band_idx * 24
-        band_sprites = find_sprites_in_region(data, 0, y_start, 320, 19, BG_INDEX)
-        all_sprites.extend(band_sprites)
+    def pick_band(col, y_start, band_h, label):
+        s = _extract_band_sprite(data, col, y_start, band_h, BG_INDEX)
+        if s:
+            print(f"    [{label:12s}] x={s[0]:3d} y={s[1]:3d} w={s[2]:2d} h={s[3]:2d}")
+        else:
+            print(f"    [{label:12s}] WARNING: empty band col {col} y={y_start}")
+            s = (col * 16, y_start, 1, 1)
+        return s
 
-    return all_sprites, img
+    # Target packing order — cell indices match the ANIM_MAP in player_controller.gd.
+    ordered = []
+
+    # --- Running (cells 0-9): 2 frames per direction ---
+    # S from row1 (top), SE from row2 (bot), E from row1, NE from row2, N from row1
+    ordered.append(pick_top( 4, "S run1"))       # cell 0
+    ordered.append(pick_top( 5, "S run2"))       # cell 1
+    ordered.append(pick_bot( 4, "SE run1"))      # cell 2
+    ordered.append(pick_bot( 5, "SE run2"))      # cell 3
+    ordered.append(pick_top( 7, "E run1"))       # cell 4
+    ordered.append(pick_top( 8, "E run2"))       # cell 5
+    ordered.append(pick_bot(10, "NE run1"))      # cell 6
+    ordered.append(pick_bot(11, "NE run2"))      # cell 7
+    ordered.append(pick_top( 1, "N run1"))       # cell 8
+    ordered.append(pick_top( 2, "N run2"))       # cell 9
+
+    # --- Idle (cells 10-14): 1 frame per direction ---
+    ordered.append(pick_top( 3, "S idle"))       # cell 10
+    ordered.append(pick_bot( 3, "SE idle"))      # cell 11
+    ordered.append(pick_top( 6, "E idle"))       # cell 12
+    ordered.append(pick_bot( 9, "NE idle"))      # cell 13
+    ordered.append(pick_top( 0, "N idle"))       # cell 14
+
+    # --- Kick (cells 15-19): reuse idle ---
+    ordered.append(pick_top( 3, "S kick"))       # cell 15
+    ordered.append(pick_bot( 3, "SE kick"))      # cell 16
+    ordered.append(pick_top( 6, "E kick"))       # cell 17
+    ordered.append(pick_bot( 9, "NE kick"))      # cell 18
+    ordered.append(pick_top( 0, "N kick"))       # cell 19
+
+    # --- Slides (cells 20-27): single-frame from row1 top ---
+    ordered.append(pick_top(13, "SlideS"))       # cell 20
+    ordered.append(pick_top(17, "SlideSE"))      # cell 21
+    ordered.append(pick_top(15, "SlideE"))       # cell 22
+    ordered.append(pick_top(19, "SlideNE"))      # cell 23
+    ordered.append(pick_top(12, "SlideN"))       # cell 24
+    ordered.append(pick_top(14, "SlideW"))       # cell 25
+    ordered.append(pick_top(16, "SlideSW"))      # cell 26
+    ordered.append(pick_top(18, "SlideNW"))      # cell 27
+
+    # --- Down/knocked (cells 28-35): from row2 bot ---
+    ordered.append(pick_bot(12, "DownN"))        # cell 28
+    ordered.append(pick_bot(13, "DownS"))        # cell 29
+    ordered.append(pick_bot(17, "DownSE"))       # cell 30
+    ordered.append(pick_bot(19, "DownNE"))       # cell 31
+    ordered.append(pick_bot(15, "DownE"))        # cell 32
+    ordered.append(pick_bot(14, "DownW"))        # cell 33
+    ordered.append(pick_bot(16, "DownSW"))       # cell 34
+    ordered.append(pick_bot(18, "DownNW"))       # cell 35
+
+    return ordered, img
 
 
 def pack_sprites_to_sheet(img, sprites, cell_w, cell_h, cols):
@@ -398,14 +542,9 @@ def create_pitch_background():
 
 def extract_and_pack_team(filename, output_name, cell_w=16, cell_h=32, cols=10):
     """Extract sprites from a team sheet and pack into a grid sprite sheet."""
-    sprites, img = extract_player_sprites(filename)
-    print(f"  {filename}: found {len(sprites)} sprites")
-
-    # Sort sprites: by y first, then x (reading order)
-    sprites.sort(key=lambda s: (s[1], s[0]))
-
-    for i, (x, y, w, h) in enumerate(sprites):
-        print(f"    [{i:2d}] x={x:3d} y={y:3d} w={w:2d} h={h:2d}")
+    print(f"  {filename}:")
+    sprites, img = extract_player_sprites_semantic(filename)
+    print(f"    Total: {len(sprites)} sprites mapped")
 
     sheet = pack_sprites_to_sheet(img, sprites, cell_w, cell_h, cols)
     output_path = os.path.join(PLAYERS_DIR, output_name)
@@ -423,7 +562,7 @@ def main():
     cell_w, cell_h = 16, 32
     cols = 10
 
-    sprites_solid = extract_and_pack_team(
+    extract_and_pack_team(
         "cjcteam1.png", "player_solid.png", cell_w, cell_h, cols
     )
     extract_and_pack_team(
@@ -432,120 +571,68 @@ def main():
     extract_and_pack_team(
         "cjcteam3.png", "player_hstripes.png", cell_w, cell_h, cols
     )
-    # Goalkeeper needs wider cells for diving sprites (up to 63px wide)
-    extract_and_pack_team(
-        "cjcteamg1.png", "goalkeeper.png", 32, 32, 8
-    )
-
-    print("\n=== Creating ball sprites ===")
-    ball_sheet = create_ball_sprites()
-    ball_path = os.path.join(BALL_DIR, "ball.png")
-    ball_sheet.save(ball_path)
-    print(f"  → Saved {ball_path} ({ball_sheet.size[0]}x{ball_sheet.size[1]})")
-
-    ball_shadow = create_ball_shadow()
-    shadow_path = os.path.join(BALL_DIR, "ball_shadow.png")
-    ball_shadow.save(shadow_path)
-    print(f"  → Saved {shadow_path} ({ball_shadow.size[0]}x{ball_shadow.size[1]})")
-
-    print("\n=== Creating goal sprites ===")
-    goal_left, goal_right = create_goal_sprites()
-    goal_left_path = os.path.join(PITCH_DIR, "goal_left.png")
-    goal_right_path = os.path.join(PITCH_DIR, "goal_right.png")
-    goal_left.save(goal_left_path)
-    goal_right.save(goal_right_path)
-    print(f"  → Saved {goal_left_path} ({goal_left.size[0]}x{goal_left.size[1]})")
-    print(f"  → Saved {goal_right_path} ({goal_right.size[0]}x{goal_right.size[1]})")
-
-    print("\n=== Creating pitch background ===")
-    pitch = create_pitch_background()
-    pitch_path = os.path.join(PITCH_DIR, "pitch.png")
-    pitch.save(pitch_path)
-    print(f"  → Saved {pitch_path} ({pitch.size[0]}x{pitch.size[1]})")
 
     # Write sprite layout documentation
-    write_layout_docs(sprites_solid)
+    write_layout_docs()
 
     print("\n=== Done! ===")
 
 
-def write_layout_docs(sprites):
+def write_layout_docs():
     """Write sprite sheet layout documentation."""
     doc_path = os.path.join(PROJECT_ROOT, "sprites", "SPRITE_LAYOUT.md")
     with open(doc_path, "w") as f:
-        f.write("# Sprite Sheet Layout Documentation\n\n")
-        f.write("## Source Files\n\n")
-        f.write("Original sprites from `sprites/original/` (Codetapper Amiga rips).\n")
-        f.write("**Copyright:** These are copyrighted Sensible Soccer sprites. ")
-        f.write("For development/prototyping only.\n\n")
+        f.write("""# Sprite Sheet Layout Documentation
 
-        f.write("## Player Palette (16 colors)\n\n")
-        f.write("| Index | Hex | Role | Swappable |\n")
-        f.write("|-------|-----|------|-----------|\n")
-        palette_roles = {
-            0: ("Background (grass)", False),
-            1: ("Gray", False),
-            2: ("White (socks/highlights)", True),
-            3: ("Black (boots/outlines)", False),
-            4: ("Dark skin tone", False),
-            5: ("Medium skin tone", False),
-            6: ("Light skin tone", False),
-            7: ("Dark green (unused)", False),
-            8: ("Shadow on grass", False),
-            9: ("Hair (golden)", True),
-            10: ("**Kit color A** (red)", True),
-            11: ("**Kit color B** (blue)", True),
-            12: ("Dark brown (hair)", True),
-            13: ("Amber (hair variant)", True),
-            14: ("Anti-alias green", False),
-            15: ("Yellow", False),
-        }
-        for idx, (role, swap) in palette_roles.items():
-            r, g, b = PLAYER_PALETTE[idx]
-            f.write(f"| {idx:2d} | #{r:02X}{g:02X}{b:02X} | {role} | "
-                    f"{'Yes' if swap else 'No'} |\n")
+## Source Files
 
-        f.write("\n## Kit Variants\n\n")
-        f.write("Three sprite sheets with identical layouts but different pixel patterns:\n\n")
-        f.write("- `player_solid.png` — Solid color kit (from `cjcteam1.png`)\n")
-        f.write("- `player_vstripes.png` — Vertical stripes (from `cjcteam2.png`)\n")
-        f.write("- `player_hstripes.png` — Horizontal stripes (from `cjcteam3.png`)\n")
-        f.write("- `goalkeeper.png` — Goalkeeper sprites (from `cjcteamg1.png`)\n\n")
-        f.write("Kit colors A (#FF0000) and B (#0000FF) are swapped between variants ")
-        f.write("to create stripe patterns. The palette swap shader replaces these ")
-        f.write("marker colors with team-specific colors at runtime.\n\n")
+Original sprites from `sprites/original/` (Codetapper Amiga rips).
+**Copyright:** These are copyrighted Sensible Soccer sprites. For development/prototyping only.
 
-        f.write("## Player Sprite Sheet Layout\n\n")
-        f.write(f"Cell size: 16×32 pixels, 10 columns per row.\n\n")
-        f.write("Sprites are extracted in reading order (top-to-bottom, left-to-right) ")
-        f.write("from the original sheets.\n\n")
-        f.write("| Cell | Source Position | Size | Notes |\n")
-        f.write("|------|----------------|------|-------|\n")
-        for i, (x, y, w, h) in enumerate(sprites):
-            band = "top" if y < 31 else f"band{(y - 32) // 24 + 1}"
-            f.write(f"| {i:2d} | ({x},{y}) | {w}×{h} | {band} |\n")
+## Original Layout (cjcteam1/2/3.png, 320x256)
 
-        f.write("\n## Ball Sprites\n\n")
-        f.write("`ball/ball.png` — 4 cells of 8×8:\n")
-        f.write("- Cell 0-2: Ball rotation frames (white with panel lines)\n")
-        f.write("- Cell 3: Ball shadow (semi-transparent ellipse)\n\n")
-        f.write("`ball/ball_shadow.png` — Single 8×8 shadow sprite.\n\n")
+The first 32px band (y=0-31) contains TWO rows of sprites stacked vertically
+with a 1-2px gap between them. Each 16px column holds one sprite per row.
 
-        f.write("## Pitch\n\n")
-        f.write("`pitch/pitch.png` — 320×480 full pitch with markings, ")
-        f.write("two-tone grass stripes, penalty areas, center circle.\n\n")
-        f.write("`pitch/goal_net.png` — 32×40 goal with white posts and ")
-        f.write("semi-transparent net pattern.\n\n")
+**Row 1 (top half, y~0-15) — Cardinal directions + slides (20 columns):**
+FN N1 N2 | FS S1 S2 | FE E1 E2 | FW W1 W2 | SlideN SlideS SlideW SlideE SlideSW SlideSE SlideNW SlideNE
 
-        f.write("## Palette Swap Shader\n\n")
-        f.write("The shader should replace these marker colors:\n\n")
-        f.write("| Marker Color | Hex | Shader Uniform |\n")
-        f.write("|-------------|-----|----------------|\n")
-        f.write("| Kit A (red) | #FF0000 | `kit_primary` |\n")
-        f.write("| Kit B (blue) | #0000FF | `kit_secondary` |\n")
-        f.write("| White | #FFFFFF | `socks_color` |\n")
-        f.write("| Golden | #CC8800 | `hair_color` |\n")
+**Row 2 (bottom half, y~16-31) — Diagonal directions + down (20 columns):**
+FSW SW1 SW2 | FSE SE1 SE2 | FNW NW1 NW2 | FNE NE1 NE2 | DownN DownS DownW DownE DownSW DownSE DownNW DownNE
 
+Mirror directions: W=flip(E), NW=flip(NE), SW=flip(SE).
+
+## Packed Sprite Sheet Layout
+
+Cell size: 16x32 pixels, 10 columns per row.
+5 base directions: S, SE, E, NE, N.
+
+| Cells | Content | Direction order |
+|-------|---------|-----------------|
+| 0-9 | Running (2 frames each) | S, SE, E, NE, N |
+| 10-14 | Idle/facing (1 frame each) | S, SE, E, NE, N |
+| 15-19 | Kick (= idle, 1 frame each) | S, SE, E, NE, N |
+| 20-27 | Slide (1 frame each) | S, SE, E, NE, N, W, SW, NW |
+| 28-35 | Down/knocked (1 frame each) | N, S, SE, NE, E, W, SW, NW |
+
+## ANIM_MAP Reference
+
+```
+"run_s": [0,1], "run_se": [2,3], "run_e": [4,5], "run_ne": [6,7], "run_n": [8,9]
+"idle_s": [10], "idle_se": [11], "idle_e": [12], "idle_ne": [13], "idle_n": [14]
+"kick_s": [15], "kick_se": [16], "kick_e": [17], "kick_ne": [18], "kick_n": [19]
+"slide_s": [20], "slide_se": [21], "slide_e": [22], "slide_ne": [23], "slide_n": [24]
+"knocked_down": [28], "getting_up": [28, 29], "celebrate": [10, 14, 12]
+```
+
+## Kit Variants
+
+- `player_solid.png` — Solid color kit (from `cjcteam1.png`)
+- `player_vstripes.png` — Vertical stripes (from `cjcteam2.png`)
+- `player_hstripes.png` — Horizontal stripes (from `cjcteam3.png`)
+
+Kit colors A (#FF0000) and B (#0000FF) are replaced by the palette swap shader at runtime.
+""")
     print(f"  → Saved {doc_path}")
 
 

@@ -1,0 +1,39 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/test_goal_rendering.gd" id="1_test"]
+[ext_resource type="Texture2D" path="res://sprites/pitch/pitch.png" id="2_pitch"]
+
+[node name="TestGoalRendering" type="Node2D"]
+script = ExtResource("1_test")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(300, 360)
+
+[node name="PitchSprite" type="Sprite2D" parent="."]
+position = Vector2(300, 360)
+texture = ExtResource("2_pitch")
+
+[node name="TopGoalNetting" type="Sprite2D" parent="."]
+
+[node name="TopGoalFrame" type="Sprite2D" parent="."]
+
+[node name="BottomGoalFrame" type="Sprite2D" parent="."]
+
+[node name="BallShadow" type="Sprite2D" parent="."]
+modulate = Color(1, 1, 1, 0.5)
+z_index = -1
+
+[node name="TestBall" type="Sprite2D" parent="."]
+
+[node name="TopBallOverlay" type="Sprite2D" parent="."]
+
+[node name="BottomBallOverlay" type="Sprite2D" parent="."]
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="InfoLabel" type="Label" parent="UI"]
+offset_left = 5.0
+offset_top = 5.0
+offset_right = 330.0
+offset_bottom = 60.0
+text = "Loading..."

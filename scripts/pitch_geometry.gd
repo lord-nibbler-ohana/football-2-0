@@ -42,3 +42,4 @@ const GOAL_MOUTH_HALF := 42.0  ## Half-width of goal mouth
 const GOAL_MOUTH_LEFT := CENTER_X - GOAL_MOUTH_HALF  # 258
 const GOAL_MOUTH_RIGHT := CENTER_X + GOAL_MOUTH_HALF  # 342
 const GOAL_DEPTH := 6.0
+const GOAL_DEPTH_VISUAL := 11.0  ## Rendering depth (larger than collision depth for visual fidelity)

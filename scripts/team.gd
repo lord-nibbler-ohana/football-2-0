@@ -51,12 +51,15 @@ func _ready() -> void:
 ## Spawn player instances at formation positions.
 func _spawn_players() -> void:
 	var positions: Array[Vector2] = HOME_POSITIONS if is_home else AWAY_POSITIONS
+	## Jersey numbers: GK=1, DEF=2,3, MID=4, FWD=5 (matching position order).
+	var jersey_numbers: Array[int] = [1, 2, 3, 4, 5]
 	for i in range(positions.size()):
 		var player: CharacterBody2D = PLAYER_SCENE.instantiate()
 		player.position = positions[i]
 		player.formation_position = positions[i]
 		player.team_id = team_id
 		player.is_goalkeeper = (i == 0)
+		player.jersey_number = jersey_numbers[i]
 		add_child(player)
 
 

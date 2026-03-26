@@ -5,7 +5,7 @@ var animation_state: PlayerAnimationPure
 var _sprite_frames: SpriteFrames
 
 @onready var anim_sprite: AnimatedSprite2D = $AnimatedSprite2D
-@onready var selection_arrow: Polygon2D = $SelectionArrow
+@onready var jersey_label: Label = $JerseyLabel
 
 ## Kit style determines which sprite sheet to use.
 enum KitStyle { SOLID, VERTICAL_STRIPES, HORIZONTAL_STRIPES }
@@ -18,13 +18,16 @@ var kit_secondary: Color = Color.BLUE
 var team_id: int = 0
 var is_goalkeeper: bool = false
 
+## Jersey number (set by team.gd on spawn).
+var jersey_number: int = 0
+
 ## Movement and control state.
 var is_human_controlled: bool = false
 var is_selected: bool = false:
 	set(value):
 		is_selected = value
-		if selection_arrow:
-			selection_arrow.visible = value
+		if jersey_label:
+			jersey_label.visible = value
 var formation_position: Vector2 = Vector2.ZERO
 var facing_direction: Vector2 = Vector2.DOWN
 var has_possession: bool = false
@@ -60,10 +63,16 @@ const SHEET_PATHS := {
 
 ## Cell size in the sprite sheet.
 const CELL_W := 16
-const CELL_H := 16
+const CELL_H := 32
 const SHEET_COLS := 10
 
 ## Animation mapping: animation_name -> array of cell indices in the sprite sheet.
+## Packed layout (16×32 cells, 10 cols):
+##   0-9:   Running (S, SE, E, NE, N) × 2 frames
+##   10-14: Idle (S, SE, E, NE, N)
+##   15-19: Kick = idle (S, SE, E, NE, N)
+##   20-27: Slide single-frame (S, SE, E, NE, N, W, SW, NW)
+##   28-35: Down/knocked (N, S, SE, NE, E, W, SW, NW)
 const ANIM_MAP := {
 	# Running: 2 frames per direction
 	"run_s":  [0, 1],
@@ -71,28 +80,28 @@ const ANIM_MAP := {
 	"run_e":  [4, 5],
 	"run_ne": [6, 7],
 	"run_n":  [8, 9],
-	# Idle: first frame of each run direction
-	"idle_s":  [0],
-	"idle_se": [2],
-	"idle_e":  [4],
-	"idle_ne": [6],
-	"idle_n":  [8],
-	# Kick: from the wider sprites in top band
-	"kick_s":  [14],
-	"kick_se": [15],
-	"kick_e":  [16],
-	"kick_ne": [17],
-	"kick_n":  [18],
-	# Slide tackle: first 3 sprites from each direction band
-	"slide_s":  [20, 21, 22],
-	"slide_se": [30, 31, 32],
-	"slide_e":  [36, 37, 38],
-	"slide_ne": [42, 43, 44],
-	"slide_n":  [48, 49, 50],
-	# Celebrate and knocked down: use band1 extras
-	"celebrate":   [26, 27, 28, 29],
-	"knocked_down": [23],
-	"getting_up":   [24, 25],
+	# Idle: 1 frame per direction
+	"idle_s":  [10],
+	"idle_se": [11],
+	"idle_e":  [12],
+	"idle_ne": [13],
+	"idle_n":  [14],
+	# Kick: reuses idle sprites (no separate kick frames in original)
+	"kick_s":  [15],
+	"kick_se": [16],
+	"kick_e":  [17],
+	"kick_ne": [18],
+	"kick_n":  [19],
+	# Slide: single-frame per direction
+	"slide_s":  [20],
+	"slide_se": [21],
+	"slide_e":  [22],
+	"slide_ne": [23],
+	"slide_n":  [24],
+	# Knocked down / getting up / celebrate
+	"knocked_down": [28],
+	"getting_up":   [28, 29],
+	"celebrate":    [10, 14, 12],
 }
 
 ## Animation speeds (FPS).
@@ -114,9 +123,10 @@ func _ready() -> void:
 	_apply_kit_shader()
 	anim_sprite.sprite_frames = _sprite_frames
 	anim_sprite.play("idle_s")
-	# Hide selection arrow by default
-	if selection_arrow:
-		selection_arrow.visible = is_selected
+	# Set jersey number text and hide by default
+	if jersey_label:
+		jersey_label.text = str(jersey_number)
+		jersey_label.visible = is_selected
 
 
 func _physics_process(_delta: float) -> void:
