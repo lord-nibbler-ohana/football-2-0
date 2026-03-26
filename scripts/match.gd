@@ -135,6 +135,16 @@ func _update_possession() -> void:
 		var possessor: CharacterBody2D = all_players[possessor_idx]
 		possessor.has_possession = true
 
+		# Auto-switch: if a teammate gains possession, switch control to them
+		if selected_player \
+				and possessor != selected_player \
+				and possessor.team_id == selected_player.team_id:
+			selected_player.is_selected = false
+			selected_player.is_human_controlled = false
+			possessor.is_selected = true
+			possessor.is_human_controlled = true
+			selected_player = possessor
+
 		# Apply pickup damping on first frame of gaining possession
 		if possession.was_pickup_this_frame:
 			ball.apply_damping(PossessionPure.PICKUP_DAMPING)

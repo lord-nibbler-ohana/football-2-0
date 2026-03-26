@@ -139,6 +139,10 @@ func _physics_process(_delta: float) -> void:
 	else:
 		# Non-controlled players stand at formation position (no AI yet)
 		velocity = Vector2.ZERO
+		# Reset kick state if deselected mid-kick (e.g., after passing)
+		if kick_state.state != KickStatePure.State.IDLE:
+			kick_state.reset()
+			fire_held = false
 
 	# Update animation from velocity (animation system reads px/frame)
 	var result := animation_state.update(velocity / 50.0)
