@@ -12,6 +12,17 @@ static func get_movement_input() -> Vector2:
 	return InputQuantiserPure.quantise(raw)
 
 
+## Get raw analog movement input (not quantised). Used for smooth aiming.
+static func get_raw_movement_input() -> Vector2:
+	var raw := Vector2(
+		Input.get_axis("move_left", "move_right"),
+		Input.get_axis("move_up", "move_down")
+	)
+	if raw.length() > 1.0:
+		raw = raw.normalized()
+	return raw
+
+
 ## True on the frame the kick button is first pressed.
 static func is_kick_just_pressed() -> bool:
 	return Input.is_action_just_pressed("action_kick")

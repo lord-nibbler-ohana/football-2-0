@@ -56,9 +56,22 @@ var _is_chaser: bool = false
 ## Whether a teammate on this team has possession (set by match.gd).
 var _teammate_has_ball: bool = false
 
+## Throw-in mode — when true, match.gd handles movement and animation directly.
+var throwin_mode: bool = false
+
+## Match-level freeze — when true, player holds position (e.g. during set pieces).
+var match_frozen: bool = false
+
 ## Post-kick cooldown — prevents immediate re-possession after kicking.
 const KICK_COOLDOWN_FRAMES := 15
 var kick_cooldown: int = 0
+
+## Loss-of-possession stun — brief stutter when dispossessed (not from kicking).
+## Prevents rapid back-and-forth possession ping-pong in AI games.
+const LOSS_STUN_FRAMES := 50  ## 1.0s at 50 Hz
+const LOSS_STUN_SPEED_FACTOR := 0.25  ## Movement speed multiplier during stun
+var loss_stun: int = 0
+var _had_possession_last_frame: bool = false
 
 ## Reference to the ball node (set by match.gd).
 var ball: CharacterBody2D = null
@@ -91,6 +104,8 @@ const SHEET_COLS := 10
 ##   15-19: Kick = idle (S, SE, E, NE, N)
 ##   20-27: Slide single-frame (S, SE, E, NE, N, W, SW, NW)
 ##   28-35: Down/knocked (N, S, SE, NE, E, W, SW, NW)
+##   36-56: Heading (S, E, W, SW, SE, NW, NE) × 3 frames
+##   57-77: Throw-in (S, E, W, SW, SE, NW, NE) × 3 frames
 const ANIM_MAP := {
 	# Running: 2 frames per direction
 	"run_s":  [0, 1],
@@ -120,6 +135,22 @@ const ANIM_MAP := {
 	"knocked_down": [28],
 	"getting_up":   [28, 29],
 	"celebrate":    [10, 14, 12],
+	# Heading: 3 frames per direction (7 directions, all explicit)
+	"head_s":  [36, 37, 38],
+	"head_e":  [39, 40, 41],
+	"head_w":  [42, 43, 44],
+	"head_sw": [45, 46, 47],
+	"head_se": [48, 49, 50],
+	"head_nw": [51, 52, 53],
+	"head_ne": [54, 55, 56],
+	# Throw-in: 3 frames per direction (ball visible on frame 3 only)
+	"throwin_s":  [57, 58, 59],
+	"throwin_e":  [60, 61, 62],
+	"throwin_w":  [63, 64, 65],
+	"throwin_sw": [66, 67, 68],
+	"throwin_se": [69, 70, 71],
+	"throwin_nw": [72, 73, 74],
+	"throwin_ne": [75, 76, 77],
 }
 
 ## Animation speeds (FPS).
@@ -131,6 +162,8 @@ const ANIM_SPEEDS := {
 	"celebrate": 6.0,
 	"knocked_down": 1.0,
 	"getting_up": 6.0,
+	"head": 8.0,
+	"throwin": 6.0,
 }
 
 
@@ -151,6 +184,59 @@ func _physics_process(_delta: float) -> void:
 	# Tick down kick cooldown
 	if kick_cooldown > 0:
 		kick_cooldown -= 1
+
+	# Tick down loss-of-possession stun
+	if loss_stun > 0:
+		loss_stun -= 1
+
+	# Detect dispossession (lost ball without kicking) and apply stun
+	if _had_possession_last_frame and not has_possession and kick_cooldown == 0:
+		loss_stun = LOSS_STUN_FRAMES
+	_had_possession_last_frame = has_possession
+
+	# Throw-in mode: match.gd drives movement and animation, skip everything.
+	if throwin_mode:
+		# Resolve sprite direction from facing_direction
+		var dir := PlayerAnimationPure._velocity_to_direction(facing_direction)
+		var ti := PlayerAnimationPure._resolve_throwin_direction(dir)
+
+		if animation_state.state == PlayerAnimationPure.State.THROWING_IN:
+			# Full throw animation playing — tick the oneshot timer
+			if animation_state._oneshot_timer > 0:
+				animation_state._oneshot_timer -= 1
+				if animation_state._oneshot_timer <= 0:
+					animation_state.state = PlayerAnimationPure.State.IDLE
+			var anim_n: String = "throwin_" + ti["name"]
+			anim_sprite.flip_h = ti["flip"]
+			if _sprite_frames.has_animation(anim_n) and anim_sprite.animation != anim_n:
+				anim_sprite.play(anim_n)
+		elif velocity.length() > 1.0:
+			# Walking to the throw-in spot — show run animation
+			animation_state.direction = dir
+			var anim_result := animation_state.update(velocity / 50.0)
+			anim_sprite.flip_h = anim_result["flip_h"]
+			var anim_n: String = anim_result["animation"]
+			if _sprite_frames.has_animation(anim_n) and anim_sprite.animation != anim_n:
+				anim_sprite.play(anim_n)
+		else:
+			# Aiming/charging — show first frame of throwin anim, paused
+			var anim_n: String = "throwin_" + ti["name"]
+			anim_sprite.flip_h = ti["flip"]
+			if anim_sprite.animation != anim_n:
+				anim_sprite.play(anim_n)
+			anim_sprite.stop()
+			anim_sprite.frame = 0
+		return
+
+	# Match frozen: hold position, show idle in current direction.
+	if match_frozen:
+		velocity = Vector2.ZERO
+		var anim_result := animation_state.update(Vector2.ZERO)
+		anim_sprite.flip_h = anim_result["flip_h"]
+		var anim_n: String = anim_result["animation"]
+		if _sprite_frames.has_animation(anim_n) and anim_sprite.animation != anim_n:
+			anim_sprite.play(anim_n)
+		return
 
 	if is_selected:
 		_handle_human_input()
@@ -185,7 +271,8 @@ func _handle_human_input() -> void:
 
 	if not animation_state.is_locked():
 		# velocity in px/sec for move_and_slide
-		velocity = input_dir * PLAYER_SPEED * 50.0
+		var speed_mult := LOSS_STUN_SPEED_FACTOR if loss_stun > 0 else 1.0
+		velocity = input_dir * PLAYER_SPEED * speed_mult * 50.0
 		move_and_slide()
 
 	# Cancel charge if possession lost
@@ -250,6 +337,11 @@ func has_kick_cooldown() -> bool:
 	return kick_cooldown > 0
 
 
+## True if player is stunned from losing the ball and can't re-possess yet.
+func has_loss_stun() -> bool:
+	return loss_stun > 0
+
+
 ## Get current joystick/keyboard input direction.
 ## Called by ball.gd for aftertouch after kicking.
 func get_joystick_input() -> Vector2:
@@ -277,11 +369,12 @@ func _handle_ai() -> void:
 		velocity = Vector2.ZERO
 		return
 
-	# Apply movement
+	# Apply movement (slowed during loss stun)
 	var move_dir: Vector2 = ai_result.get("velocity", Vector2.ZERO)
+	var speed_mult := LOSS_STUN_SPEED_FACTOR if loss_stun > 0 else 1.0
 	if move_dir.length() > 0.01:
 		facing_direction = move_dir.normalized()
-		velocity = move_dir.normalized() * PLAYER_SPEED * 50.0
+		velocity = move_dir.normalized() * PLAYER_SPEED * speed_mult * 50.0
 	else:
 		velocity = Vector2.ZERO
 	move_and_slide()

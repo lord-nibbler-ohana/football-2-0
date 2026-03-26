@@ -3,7 +3,7 @@ extends RefCounted
 ## Pure match state machine — no Node/scene tree dependencies.
 ## Tracks match state, score, and celebration timers.
 
-enum State { PRE_MATCH, PLAYING, GOAL_SCORED, KICKOFF_SETUP }
+enum State { PRE_MATCH, PLAYING, GOAL_SCORED, KICKOFF_SETUP, THROWIN_SETUP, THROWIN_ACTIVE }
 
 const GOAL_CELEBRATION_TIME := 2.0
 
@@ -12,6 +12,11 @@ var score_home: int = 0
 var score_away: int = 0
 var goal_pause_timer: float = 0.0
 var last_goal_team: String = ""
+
+## Throw-in state.
+var throwin_position: Vector2 = Vector2.ZERO  ## Where ball went out (on sideline)
+var throwin_side: String = ""  ## "left" or "right"
+var throwin_team_id: int = -1  ## Team that gets the throw-in
 
 
 ## Start the match — transition to PLAYING.
@@ -59,4 +64,24 @@ func get_score_text() -> String:
 ## Transition from KICKOFF_SETUP back to PLAYING.
 func kickoff_complete() -> void:
 	if state == State.KICKOFF_SETUP:
+		state = State.PLAYING
+
+
+## Record a throw-in and enter THROWIN_SETUP.
+func record_throwin(pos: Vector2, side: String, team_id: int) -> void:
+	throwin_position = pos
+	throwin_side = side
+	throwin_team_id = team_id
+	state = State.THROWIN_SETUP
+
+
+## Thrower has reached the sideline — activate throw-in controls.
+func throwin_ready() -> void:
+	if state == State.THROWIN_SETUP:
+		state = State.THROWIN_ACTIVE
+
+
+## Throw-in completed — return to play.
+func throwin_complete() -> void:
+	if state == State.THROWIN_ACTIVE:
 		state = State.PLAYING

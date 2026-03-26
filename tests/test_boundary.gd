@@ -9,27 +9,27 @@ func test_ball_inside_bounds_unchanged():
 		Vector2(300, 360), Vector2(2.0, -1.5))
 	assert_eq(result["position"], Vector2(300, 360))
 	assert_eq(result["velocity"], Vector2(2.0, -1.5))
+	assert_eq(result["throwin"], "", "no throw-in inside bounds")
 
 
-# ── Ball: left edge bounce ──
+# ── Ball: left sideline triggers throw-in ──
 
-func test_ball_left_edge_bounces():
+func test_ball_left_sideline_throwin():
 	var result := BoundaryPure.clamp_ball(
-		Vector2(-5, 300), Vector2(-3.0, 1.0))
-	assert_eq(result["position"].x, 0.0)
-	assert_gt(result["velocity"].x, 0.0, "velocity.x should reflect positive")
-	assert_almost_eq(result["velocity"].x, 3.0 * BoundaryPure.BALL_BOUNCE_DAMPING, 0.01)
-	assert_eq(result["velocity"].y, 1.0, "velocity.y unchanged")
+		Vector2(PitchGeometry.SIDELINE_LEFT - 5, 300), Vector2(-3.0, 1.0))
+	assert_eq(result["position"].x, PitchGeometry.SIDELINE_LEFT, "clamped to sideline")
+	assert_eq(result["velocity"], Vector2.ZERO, "velocity zeroed on throw-in")
+	assert_eq(result["throwin"], "left", "left throw-in triggered")
 
 
-# ── Ball: right edge bounce ──
+# ── Ball: right sideline triggers throw-in ──
 
-func test_ball_right_edge_bounces():
+func test_ball_right_sideline_throwin():
 	var result := BoundaryPure.clamp_ball(
-		Vector2(PitchGeometry.WORLD_W + 5, 300), Vector2(4.0, 0.0))
-	assert_eq(result["position"].x, PitchGeometry.WORLD_W)
-	assert_lt(result["velocity"].x, 0.0, "velocity.x should reflect negative")
-	assert_almost_eq(result["velocity"].x, -4.0 * BoundaryPure.BALL_BOUNCE_DAMPING, 0.01)
+		Vector2(PitchGeometry.SIDELINE_RIGHT + 5, 300), Vector2(4.0, 0.0))
+	assert_eq(result["position"].x, PitchGeometry.SIDELINE_RIGHT, "clamped to sideline")
+	assert_eq(result["velocity"], Vector2.ZERO, "velocity zeroed on throw-in")
+	assert_eq(result["throwin"], "right", "right throw-in triggered")
 
 
 # ── Ball: top edge bounce (outside goal mouth) ──
@@ -70,15 +70,13 @@ func test_ball_bottom_goal_mouth_no_bounce():
 	assert_eq(result["velocity"].y, 4.0, "velocity should not reflect in goal mouth")
 
 
-# ── Ball: corner — both axes bounce ──
+# ── Ball: corner — sideline triggers throw-in (takes priority over goal line bounce) ──
 
-func test_ball_corner_bounces_both_axes():
+func test_ball_corner_triggers_throwin():
 	var result := BoundaryPure.clamp_ball(
-		Vector2(-2, -2), Vector2(-3.0, -4.0))
-	assert_eq(result["position"].x, 0.0)
-	assert_eq(result["position"].y, 0.0)
-	assert_gt(result["velocity"].x, 0.0)
-	assert_gt(result["velocity"].y, 0.0)
+		Vector2(PitchGeometry.SIDELINE_LEFT - 5, -2), Vector2(-3.0, -4.0))
+	assert_eq(result["throwin"], "left", "sideline crossing triggers throw-in")
+	assert_eq(result["velocity"], Vector2.ZERO, "velocity zeroed on throw-in")
 
 
 # ── Ball: goal mouth edge boundary ──

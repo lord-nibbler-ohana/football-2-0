@@ -10,6 +10,7 @@ enum State {
 	CELEBRATING,
 	KNOCKED_DOWN,
 	GETTING_UP,
+	THROWING_IN,
 }
 
 ## 8-way direction names (5 unique + 3 mirrored).
@@ -26,6 +27,7 @@ const SLIDE_DURATION := 12
 const CELEBRATE_DURATION := 50
 const KNOCKDOWN_DURATION := 25
 const GETUP_DURATION := 10
+const THROWIN_DURATION := 9
 
 var state: State = State.IDLE
 var direction: Direction = Direction.S
@@ -90,6 +92,10 @@ func get_animation_result() -> Dictionary:
 		State.GETTING_UP:
 			anim_name = "getting_up"
 			flip_h = false
+		State.THROWING_IN:
+			var ti := _resolve_throwin_direction(direction)
+			anim_name = "throwin_" + ti["name"]
+			flip_h = ti["flip"]
 
 	return { "animation": anim_name, "flip_h": flip_h }
 
@@ -126,7 +132,38 @@ func trigger_getup() -> void:
 
 ## Is the player in a one-shot animation that blocks other actions?
 func is_locked() -> bool:
-	return state in [State.KICKING, State.SLIDING, State.KNOCKED_DOWN, State.GETTING_UP]
+	return state in [State.KICKING, State.SLIDING, State.KNOCKED_DOWN,
+		State.GETTING_UP, State.THROWING_IN]
+
+
+## Trigger throw-in animation (one-shot).
+func trigger_throwin() -> void:
+	state = State.THROWING_IN
+	_oneshot_timer = THROWIN_DURATION
+
+
+## Resolve direction for throw-in animations.
+## Throw-in has 7 directions: s, e, w, sw, se, nw, ne (no N).
+## N maps to ne, mirroring is handled differently since w exists explicitly.
+static func _resolve_throwin_direction(dir: Direction) -> Dictionary:
+	match dir:
+		Direction.S:
+			return {"name": "s", "flip": false}
+		Direction.SE:
+			return {"name": "se", "flip": false}
+		Direction.E:
+			return {"name": "e", "flip": false}
+		Direction.NE:
+			return {"name": "ne", "flip": false}
+		Direction.N:
+			return {"name": "ne", "flip": false}  # No N sprite, use NE
+		Direction.SW:
+			return {"name": "sw", "flip": false}
+		Direction.W:
+			return {"name": "w", "flip": false}
+		Direction.NW:
+			return {"name": "nw", "flip": false}
+	return {"name": "s", "flip": false}
 
 
 ## Convert a velocity vector to an 8-way Direction enum.

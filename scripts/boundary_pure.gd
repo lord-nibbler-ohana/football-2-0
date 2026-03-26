@@ -1,28 +1,36 @@
 class_name BoundaryPure
 extends RefCounted
 ## Pure boundary enforcement — ball bounce and player clamping at world edges.
-## No goal kicks, corners, or throw-ins — just bounce the ball back with dampening.
+## Detects throw-ins at sidelines, bounces at goal-line edges.
 
 const BALL_BOUNCE_DAMPING := 0.5
 const PLAYER_MARGIN := 2.0
 
+## How far past the sideline the ball must travel to trigger a throw-in.
+## Using the actual sideline positions (not world edges) for realism.
+const THROWIN_MARGIN := 2.0
+
 
 ## Clamp ball position within world bounds. Reflects and dampens velocity on edge hit.
-## Returns {"position": Vector2, "velocity": Vector2}.
+## Returns {"position": Vector2, "velocity": Vector2, "throwin": String}.
+## "throwin" is "" for no throw-in, "left" or "right" when ball crosses a sideline.
 ## Exception: does NOT bounce within the goal mouth at top/bottom edges (lets goals work).
 static func clamp_ball(pos: Vector2, vel: Vector2) -> Dictionary:
 	var out_pos := pos
 	var out_vel := vel
+	var throwin := ""
 
-	# Left edge
-	if out_pos.x < 0.0:
-		out_pos.x = 0.0
-		out_vel.x = absf(out_vel.x) * BALL_BOUNCE_DAMPING
+	# Left sideline — throw-in
+	if out_pos.x < PitchGeometry.SIDELINE_LEFT - THROWIN_MARGIN:
+		throwin = "left"
+		out_pos.x = PitchGeometry.SIDELINE_LEFT
+		out_vel = Vector2.ZERO
 
-	# Right edge
-	if out_pos.x > PitchGeometry.WORLD_W:
-		out_pos.x = PitchGeometry.WORLD_W
-		out_vel.x = -absf(out_vel.x) * BALL_BOUNCE_DAMPING
+	# Right sideline — throw-in
+	elif out_pos.x > PitchGeometry.SIDELINE_RIGHT + THROWIN_MARGIN:
+		throwin = "right"
+		out_pos.x = PitchGeometry.SIDELINE_RIGHT
+		out_vel = Vector2.ZERO
 
 	# Top edge — skip goal mouth
 	if out_pos.y < 0.0:
@@ -40,7 +48,7 @@ static func clamp_ball(pos: Vector2, vel: Vector2) -> Dictionary:
 			out_pos.y = PitchGeometry.WORLD_H
 			out_vel.y = -absf(out_vel.y) * BALL_BOUNCE_DAMPING
 
-	return {"position": out_pos, "velocity": out_vel}
+	return {"position": out_pos, "velocity": out_vel, "throwin": throwin}
 
 
 ## Clamp player position within world bounds (with small margin).

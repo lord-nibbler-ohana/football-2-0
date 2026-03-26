@@ -9,6 +9,12 @@ var match_time: float = 0.0
 var all_players: Array = []
 var selected_player: CharacterBody2D = null
 
+## Throw-in state.
+var throwin_logic: ThrowinPure = null
+var throwin_player: CharacterBody2D = null  ## The player taking the throw-in
+var throwin_prev_selected: CharacterBody2D = null  ## Who was selected before throw-in
+var throwin_trajectory: Node2D = null  ## Trajectory preview node
+
 @onready var ball: CharacterBody2D = $Ball
 @onready var scoreboard: Label = $UI/Scoreboard
 @onready var clock: Label = $UI/Clock
@@ -64,11 +70,8 @@ func _setup_players() -> void:
 	# Initialize AI for all players
 	_setup_ai(home_players, away_players)
 
-	# Select the home center forward as human-controlled
-	if home_players.size() > 0:
-		selected_player = _find_forward(home_players)
-		selected_player.is_human_controlled = true
-		selected_player.is_selected = true
+	# Start fully CPU-controlled by default (F2 to enable human player)
+	selected_player = null
 
 
 func _input(event: InputEvent) -> void:
@@ -106,6 +109,10 @@ func _physics_process(delta: float) -> void:
 		MatchStatePure.State.KICKOFF_SETUP:
 			_reset_to_kickoff()
 			match_state.kickoff_complete()
+		MatchStatePure.State.THROWIN_SETUP:
+			_tick_throwin_setup()
+		MatchStatePure.State.THROWIN_ACTIVE:
+			_tick_throwin_active()
 
 
 ## Check proximity-based possession and handle dribbling.
@@ -125,6 +132,10 @@ func _update_possession() -> void:
 
 		# Skip players with post-kick cooldown (prevents immediate re-possession)
 		if player.has_kick_cooldown():
+			continue
+
+		# Skip players stunned from losing the ball (prevents ping-pong possession)
+		if player.has_loss_stun():
 			continue
 
 		# Skip same-team non-kicker players during passthrough
@@ -184,13 +195,19 @@ func _update_possession() -> void:
 		ball.physics.velocity = possessor.velocity / 50.0
 
 
-## Enforce world boundaries — bounce ball, clamp players.
+## Enforce world boundaries — bounce ball, clamp players. Detect throw-ins.
 func _enforce_boundaries() -> void:
-	# Ball boundary bounce (with goal mouth exception)
+	# Ball boundary check (with goal mouth exception and throw-in detection)
 	var ball_result := BoundaryPure.clamp_ball(
 		ball.global_position, ball.physics.velocity)
 	ball.global_position = ball_result["position"]
 	ball.physics.velocity = ball_result["velocity"]
+
+	# Check for throw-in
+	var throwin_side: String = ball_result["throwin"]
+	if throwin_side != "":
+		_trigger_throwin(throwin_side)
+		return
 
 	# Player boundary clamp
 	for player in all_players:
@@ -338,3 +355,252 @@ func _update_teammate_flags() -> void:
 	for player in all_players:
 		player._teammate_has_ball = (possessing_team == player.team_id \
 			and not player.has_possession)
+
+
+# ── Throw-in ────────────────────────────────────────────────────────────────
+
+## Trigger a throw-in when ball crosses the sideline.
+func _trigger_throwin(side: String) -> void:
+	# Determine which team gets the throw (opposite of last touch)
+	var throwing_team_id := 0
+	if ball.last_kicker:
+		throwing_team_id = 1 if ball.last_kicker.team_id == 0 else 0
+	else:
+		# No last kicker — give to home team by default
+		throwing_team_id = 0
+
+	# Clamp throw-in Y to within the playing area
+	var throwin_y := clampf(ball.global_position.y,
+		PitchGeometry.GOAL_TOP_Y + 10.0, PitchGeometry.GOAL_BOTTOM_Y - 10.0)
+	var throwin_x: float
+	if side == "left":
+		throwin_x = PitchGeometry.SIDELINE_LEFT
+	else:
+		throwin_x = PitchGeometry.SIDELINE_RIGHT
+
+	var throwin_pos := Vector2(throwin_x, throwin_y)
+
+	# Stop the ball and place it at the throw-in spot
+	ball.reset_ball()
+	ball.global_position = throwin_pos
+	ball.visible = false
+
+	# Clear all possession
+	possession.reset()
+	for player in all_players:
+		player.has_possession = false
+
+	# Find nearest non-goalkeeper outfield player from throwing team
+	throwin_player = _find_nearest_thrower(throwin_pos, throwing_team_id)
+	if not throwin_player:
+		# Fallback: resume play (shouldn't happen with 10 outfield players)
+		ball.visible = true
+		return
+
+	# Save who was selected before and switch control to thrower
+	throwin_prev_selected = selected_player
+	if selected_player:
+		selected_player.is_selected = false
+		selected_player.is_human_controlled = false
+
+	# Set up throw-in logic
+	throwin_logic = ThrowinPure.new()
+	throwin_logic.setup(side)
+
+	# Record in match state
+	match_state.record_throwin(throwin_pos, side, throwing_team_id)
+
+	# Mark thrower as in throw-in mode, freeze everyone else
+	throwin_player.throwin_mode = true
+	throwin_player.is_selected = true
+	throwin_player.is_human_controlled = true
+	for player in all_players:
+		if player != throwin_player:
+			player.match_frozen = true
+
+	# Create trajectory preview node
+	if not throwin_trajectory:
+		throwin_trajectory = Node2D.new()
+		throwin_trajectory.set_script(
+			load("res://scripts/throwin_trajectory.gd"))
+		add_child(throwin_trajectory)
+
+
+## Tick THROWIN_SETUP: walk thrower to sideline.
+func _tick_throwin_setup() -> void:
+	if not throwin_player or not throwin_logic:
+		match_state.throwin_complete()
+		return
+
+	var target_pos := match_state.throwin_position
+
+	# Walk toward the spot
+	var walk_vel := throwin_logic.get_walk_velocity(
+		throwin_player.global_position, target_pos)
+
+	if walk_vel == Vector2.ZERO or throwin_logic.check_arrived(
+			throwin_player.global_position, target_pos):
+		# Arrived — snap to position and enter aiming phase
+		throwin_player.global_position = target_pos
+		throwin_player.velocity = Vector2.ZERO
+		throwin_logic.phase = ThrowinPure.Phase.AIMING
+		# Face infield
+		throwin_player.facing_direction = throwin_logic.get_default_aim()
+		match_state.throwin_ready()
+	else:
+		throwin_player.facing_direction = walk_vel.normalized()
+		throwin_player.velocity = walk_vel * 50.0
+		throwin_player.move_and_slide()
+
+
+## Tick THROWIN_ACTIVE: aim, charge, release, return.
+func _tick_throwin_active() -> void:
+	if not throwin_player or not throwin_logic:
+		_finish_throwin()
+		return
+
+	match throwin_logic.phase:
+		ThrowinPure.Phase.AIMING:
+			_throwin_handle_input()
+			_update_throwin_trajectory()
+		ThrowinPure.Phase.CHARGING:
+			_throwin_handle_input()
+			_update_throwin_trajectory()
+		ThrowinPure.Phase.THROWING:
+			throwin_logic.tick_post_throw()
+			throwin_player.velocity = Vector2.ZERO
+			# Unfreeze other players when throw animation ends (entering RETURNING)
+			if throwin_logic.phase == ThrowinPure.Phase.RETURNING:
+				for player in all_players:
+					player.match_frozen = false
+		ThrowinPure.Phase.RETURNING:
+			_tick_throwin_return()
+		ThrowinPure.Phase.DONE:
+			_finish_throwin()
+
+
+## Handle input during throw-in aiming/charging.
+## Uses raw analog input (not 8-way quantised) for smooth curve aiming.
+func _throwin_handle_input() -> void:
+	var input_dir := InputMapper.get_raw_movement_input()
+
+	# Update aim direction
+	throwin_logic.update_aim(input_dir)
+	if input_dir != Vector2.ZERO:
+		throwin_player.facing_direction = throwin_logic.aim_direction
+
+	# Freeze thrower position
+	throwin_player.velocity = Vector2.ZERO
+
+	# Button handling
+	if throwin_logic.phase == ThrowinPure.Phase.AIMING:
+		if InputMapper.is_kick_just_pressed():
+			throwin_logic.start_charge()
+	elif throwin_logic.phase == ThrowinPure.Phase.CHARGING:
+		if InputMapper.is_kick_held():
+			throwin_logic.tick_charge()
+		if InputMapper.is_kick_just_released() or not InputMapper.is_kick_held():
+			_perform_throwin()
+
+
+## Perform the actual throw.
+func _perform_throwin() -> void:
+	var result := throwin_logic.release()
+
+	# Show and kick ball
+	ball.visible = true
+	ball.global_position = match_state.throwin_position
+	ball.kick(result["velocity"], result["up_velocity"], throwin_player, true)
+
+	# Play throw-in animation
+	throwin_player.animation_state.direction = \
+		PlayerAnimationPure._velocity_to_direction(throwin_logic.aim_direction)
+	throwin_player.animation_state.trigger_throwin()
+
+	# Give thrower a kick cooldown so they don't immediately repossess
+	throwin_player.kick_cooldown = throwin_player.KICK_COOLDOWN_FRAMES
+
+	# Hide trajectory
+	if throwin_trajectory:
+		throwin_trajectory.hide_trajectory()
+
+
+## Update the trajectory preview dots.
+func _update_throwin_trajectory() -> void:
+	if not throwin_trajectory or not throwin_logic:
+		return
+	var points := throwin_logic.compute_trajectory(match_state.throwin_position)
+	throwin_trajectory.update_trajectory(points)
+
+
+## Tick the thrower returning to position.
+func _tick_throwin_return() -> void:
+	# Resume play for all other players
+	# (they'll be handled by normal _physics_process on next PLAYING tick)
+
+	var return_vel := throwin_logic.get_return_velocity(
+		throwin_player.global_position, throwin_player.formation_position)
+
+	if return_vel == Vector2.ZERO:
+		_finish_throwin()
+	else:
+		throwin_player.facing_direction = return_vel.normalized()
+		throwin_player.velocity = return_vel * 50.0
+		throwin_player.move_and_slide()
+
+	# Let other players resume normal play during return phase
+	_update_clock()
+	_update_chasers()
+	_update_teammate_flags()
+	_update_possession()
+	match_time += 1.0 / 50.0  # Manual delta since we're not in PLAYING state
+
+
+## Finish the throw-in sequence and return to normal play.
+func _finish_throwin() -> void:
+	# Unfreeze all players
+	for player in all_players:
+		player.match_frozen = false
+
+	if throwin_player:
+		throwin_player.throwin_mode = false
+		throwin_player.is_selected = false
+		throwin_player.is_human_controlled = false
+
+	# Restore previous selected player (or auto-switch will handle it)
+	if throwin_prev_selected:
+		throwin_prev_selected.is_selected = true
+		throwin_prev_selected.is_human_controlled = true
+		selected_player = throwin_prev_selected
+	elif throwin_player:
+		# If no previous selection, keep the thrower selected
+		throwin_player.is_selected = true
+		throwin_player.is_human_controlled = true
+		selected_player = throwin_player
+
+	throwin_player = null
+	throwin_prev_selected = null
+	throwin_logic = null
+
+	if throwin_trajectory:
+		throwin_trajectory.hide_trajectory()
+
+	match_state.throwin_complete()
+
+
+## Find the nearest non-goalkeeper player from the given team to the position.
+func _find_nearest_thrower(pos: Vector2, team_id: int) -> CharacterBody2D:
+	var best_player: CharacterBody2D = null
+	var best_dist := INF
+
+	for player in all_players:
+		if player.team_id != team_id:
+			continue
+		if player.is_goalkeeper:
+			continue
+		var dist: float = player.global_position.distance_to(pos)
+		if dist < best_dist:
+			best_dist = dist
+			best_player = player
+
+	return best_player
