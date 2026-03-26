@@ -61,11 +61,35 @@ func _setup_players() -> void:
 		player.is_human_controlled = false
 		player.is_selected = false
 
+	# Initialize AI for all players
+	_setup_ai(home_players, away_players)
+
 	# Select the home center forward as human-controlled
 	if home_players.size() > 0:
 		selected_player = _find_forward(home_players)
 		selected_player.is_human_controlled = true
 		selected_player.is_selected = true
+
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F2:
+		_toggle_human_control()
+
+
+## Toggle human control on/off — F2 makes the game fully CPU vs CPU.
+func _toggle_human_control() -> void:
+	if selected_player:
+		# Deselect: let AI take over
+		selected_player.is_selected = false
+		selected_player.is_human_controlled = false
+		selected_player = null
+	else:
+		# Re-select: give control back to home CF
+		var home_players: Array = team_home.get_players()
+		if home_players.size() > 0:
+			selected_player = _find_forward(home_players)
+			selected_player.is_human_controlled = true
+			selected_player.is_selected = true
 
 
 func _physics_process(delta: float) -> void:
@@ -75,6 +99,8 @@ func _physics_process(delta: float) -> void:
 		MatchStatePure.State.PLAYING:
 			match_time += delta
 			_update_clock()
+			_update_chasers()
+			_update_teammate_flags()
 			_update_possession()
 			_enforce_boundaries()
 		MatchStatePure.State.KICKOFF_SETUP:
@@ -214,3 +240,101 @@ func _find_forward(players: Array) -> CharacterBody2D:
 		if player.role == FormationPure.Role.CENTER_FORWARD:
 			return player
 	return players[players.size() - 1]
+
+
+## Initialize AI instances and precompute zone targets for all players.
+func _setup_ai(home_players: Array, away_players: Array) -> void:
+	# Precompute zone targets for each team
+	var home_slots := FormationPure.get_positions(team_home.formation)
+	var away_slots := FormationPure.get_away_positions(team_away.formation)
+	var home_targets := ZoneLookupPure.generate_targets(home_slots, true)
+	var away_targets := ZoneLookupPure.generate_targets(away_slots, false)
+
+	for player in home_players:
+		player._zone_targets = home_targets
+		if player.is_goalkeeper:
+			player.goalkeeper_ai = GoalkeeperAiPure.new()
+		else:
+			player.outfield_ai = OutfieldAiPure.new()
+
+	for player in away_players:
+		player._zone_targets = away_targets
+		if player.is_goalkeeper:
+			player.goalkeeper_ai = GoalkeeperAiPure.new()
+		else:
+			player.outfield_ai = OutfieldAiPure.new()
+
+
+## Current chaser for each team (for hysteresis).
+var _home_chaser: CharacterBody2D = null
+var _away_chaser: CharacterBody2D = null
+
+
+## Designate one ball-chaser per team each frame.
+## A team only chases when the ball is loose or the OTHER team has it.
+func _update_chasers() -> void:
+	var possessing_team := -1
+	for player in all_players:
+		if player.has_possession:
+			possessing_team = player.team_id
+			break
+
+	# Only chase when ball is loose (possessing_team == -1) or opponent has it
+	if possessing_team != 0:
+		_home_chaser = _pick_chaser(0, _home_chaser)
+	else:
+		_home_chaser = null
+	if possessing_team != 1:
+		_away_chaser = _pick_chaser(1, _away_chaser)
+	else:
+		_away_chaser = null
+
+	for player in all_players:
+		player._is_chaser = (player == _home_chaser or player == _away_chaser)
+
+
+## Pick the best chaser for a team, with hysteresis to prevent flickering.
+func _pick_chaser(target_team_id: int, current_chaser: CharacterBody2D) -> CharacterBody2D:
+	var best_dist := INF
+	var best_player: CharacterBody2D = null
+
+	for player in all_players:
+		if player.team_id != target_team_id:
+			continue
+		if player.is_goalkeeper:
+			continue
+		# Don't assign human-controlled player as chaser (they control themselves)
+		if player.is_selected:
+			continue
+		# Don't assign player who has possession (they're ON_BALL, not chasing)
+		if player.has_possession:
+			continue
+		var dist: float = player.global_position.distance_to(ball.global_position)
+		if dist < best_dist:
+			best_dist = dist
+			best_player = player
+
+	# Hysteresis: keep current chaser unless new one is significantly closer
+	if current_chaser and current_chaser.team_id == target_team_id \
+			and not current_chaser.is_goalkeeper \
+			and not current_chaser.is_selected \
+			and not current_chaser.has_possession:
+		var current_dist: float = current_chaser.global_position.distance_to(ball.global_position)
+		if best_dist + AiConstants.CHASER_SWITCH_HYSTERESIS > current_dist:
+			return current_chaser
+
+	return best_player
+
+
+## Update the teammate_has_ball flag on all players.
+func _update_teammate_flags() -> void:
+	# Determine which team has possession
+	var possessing_team := -1
+	for player in all_players:
+		if player.has_possession:
+			possessing_team = player.team_id
+			break
+
+	for player in all_players:
+		player._teammate_has_ball = (possessing_team == player.team_id \
+			and not player.has_possession)

@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://scenes/goal.tscn" id="4_goal"]
 [ext_resource type="Texture2D" path="res://sprites/pitch/pitch.png" id="5_pitch_tex"]
 [ext_resource type="Script" path="res://scripts/camera.gd" id="6_camera"]
+[ext_resource type="Script" path="res://scripts/debug_overlay.gd" id="7_debug"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("1_match")
@@ -50,3 +51,14 @@ text = "0 - 0"
 offset_left = 250.0
 offset_top = 5.0
 text = "00:00"
+
+[node name="DebugOverlay" type="CanvasLayer" parent="."]
+layer = 100
+
+[node name="DebugDraw" type="Control" parent="DebugOverlay"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("7_debug")

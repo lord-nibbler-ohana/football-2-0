@@ -48,6 +48,8 @@ func _spawn_players() -> void:
 		player.role = slot["role"]
 		player.is_goalkeeper = FormationPure.is_goalkeeper_role(slot["role"])
 		player.jersey_number = i + 1
+		player.is_home = is_home
+		player._formation_slot = i
 		add_child(player)
 
 

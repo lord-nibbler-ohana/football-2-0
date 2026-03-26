@@ -39,6 +39,23 @@ var kick_state: KickStatePure
 ## Fire button held flag — used for ball passthrough (ball ignores own team while held).
 var fire_held: bool = false
 
+## AI instances (set by match.gd during setup).
+var outfield_ai: OutfieldAiPure = null
+var goalkeeper_ai: GoalkeeperAiPure = null
+
+## Team side flag (set by team.gd on spawn).
+var is_home: bool = true
+
+## Zone lookup data (set by match.gd during setup).
+var _zone_targets: Array = []
+var _formation_slot: int = 0
+
+## Chaser flag — set each frame by match.gd.
+var _is_chaser: bool = false
+
+## Whether a teammate on this team has possession (set by match.gd).
+var _teammate_has_ball: bool = false
+
 ## Post-kick cooldown — prevents immediate re-possession after kicking.
 const KICK_COOLDOWN_FRAMES := 15
 var kick_cooldown: int = 0
@@ -138,12 +155,11 @@ func _physics_process(_delta: float) -> void:
 	if is_selected:
 		_handle_human_input()
 	else:
-		# Non-controlled players stand at formation position (no AI yet)
-		velocity = Vector2.ZERO
 		# Reset kick state if deselected mid-kick (e.g., after passing)
 		if kick_state.state != KickStatePure.State.IDLE:
 			kick_state.reset()
 			fire_held = false
+		_handle_ai()
 
 	# Update animation from velocity (animation system reads px/frame)
 	var result := animation_state.update(velocity / 50.0)
@@ -240,6 +256,118 @@ func get_joystick_input() -> Vector2:
 	if is_selected:
 		return InputMapper.get_movement_input()
 	return Vector2.ZERO
+
+
+## --- AI Logic ---
+
+## Handle AI-controlled movement and actions.
+func _handle_ai() -> void:
+	if not ball:
+		velocity = Vector2.ZERO
+		return
+
+	var context := _build_ai_context()
+	var ai_result: Dictionary
+
+	if is_goalkeeper and goalkeeper_ai:
+		ai_result = goalkeeper_ai.tick(context)
+	elif outfield_ai:
+		ai_result = outfield_ai.tick(context)
+	else:
+		velocity = Vector2.ZERO
+		return
+
+	# Apply movement
+	var move_dir: Vector2 = ai_result.get("velocity", Vector2.ZERO)
+	if move_dir.length() > 0.01:
+		facing_direction = move_dir.normalized()
+		velocity = move_dir.normalized() * PLAYER_SPEED * 50.0
+	else:
+		velocity = Vector2.ZERO
+	move_and_slide()
+
+	# Apply kick action
+	var kick_action: String = ai_result.get("kick_action", "none")
+	if kick_action != "none" and has_possession and ball:
+		_ai_perform_kick(ai_result)
+
+
+## Build context dictionary for AI tick.
+func _build_ai_context() -> Dictionary:
+	var attack_dir := Vector2.UP if is_home else Vector2.DOWN
+	var opponent_goal_center: Vector2
+	var own_goal_center: Vector2
+	if is_home:
+		opponent_goal_center = Vector2(PitchGeometry.CENTER_X, PitchGeometry.GOAL_TOP_Y)
+		own_goal_center = Vector2(PitchGeometry.CENTER_X, PitchGeometry.GOAL_BOTTOM_Y)
+	else:
+		opponent_goal_center = Vector2(PitchGeometry.CENTER_X, PitchGeometry.GOAL_BOTTOM_Y)
+		own_goal_center = Vector2(PitchGeometry.CENTER_X, PitchGeometry.GOAL_TOP_Y)
+
+	# Zone target from precomputed table
+	var zone_target := formation_position
+	if _zone_targets.size() > 0:
+		var zone_idx := ZoneLookupPure.get_zone(ball.global_position, is_home)
+		zone_target = ZoneLookupPure.get_target(
+			_zone_targets, _formation_slot, zone_idx)
+
+	# Build lightweight player info array for AI decisions
+	var player_infos: Array = []
+	for p in all_players_ref:
+		player_infos.append({
+			"position": p.global_position,
+			"team_id": p.team_id,
+		})
+
+	return {
+		"my_position": global_position,
+		"my_role": role,
+		"my_team_id": team_id,
+		"is_home": is_home,
+		"has_possession": has_possession,
+		"is_chaser": _is_chaser,
+		"teammate_has_ball": _teammate_has_ball,
+		"ball_position": ball.global_position,
+		"ball_velocity": ball.physics.velocity,
+		"ball_height": ball.physics.height,
+		"zone_target": zone_target,
+		"all_players": player_infos,
+		"attack_direction": attack_dir,
+		"opponent_goal_center": opponent_goal_center,
+		"own_goal_center": own_goal_center,
+		"player_index": player_index,
+	}
+
+
+## Execute an AI kick using the existing kick state machine.
+func _ai_perform_kick(ai_result: Dictionary) -> void:
+	if not ball:
+		return
+	var kick_dir: Vector2 = ai_result.get("kick_direction", facing_direction)
+	var charge_frames: int = ai_result.get("kick_charge", 1)
+
+	# Set facing toward kick direction so pass targeting cone is correct
+	if kick_dir.length() > 0.01:
+		facing_direction = kick_dir.normalized()
+
+	# Simulate the charge
+	kick_state.start_charge()
+	for i in range(charge_frames):
+		kick_state.tick_charge()
+
+	# Release — facing_direction is the cone center for passes,
+	# kick_dir is the joystick direction for shots
+	var player_infos := _get_all_player_infos()
+	var result := kick_state.release(
+		kick_dir, facing_direction, player_infos,
+		global_position, team_id, player_index)
+
+	if result["type"] != "none":
+		var kick_spin: float = result.get("spin", 0.0)
+		ball.kick(result["velocity"], result["up_velocity"], self, false, kick_spin)
+		animation_state.trigger_kick()
+		has_possession = false
+		kick_cooldown = KICK_COOLDOWN_FRAMES
 
 
 ## Build SpriteFrames resource from the sprite sheet.
