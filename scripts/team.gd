@@ -3,26 +3,9 @@ extends Node2D
 
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
 
-## 5v5 formation positions for each team half.
-## Vertical pitch: home at bottom (attacks upward), away at top (attacks downward).
-## Positions derived from PitchGeometry: playing area 520×640, margins 40×40.
-const HOME_POSITIONS: Array[Vector2] = [
-	Vector2(300, 600),   # GK — near bottom goal
-	Vector2(220, 545),   # DEF (left)
-	Vector2(380, 545),   # DEF (right)
-	Vector2(300, 460),   # MID
-	Vector2(300, 392),   # FWD — near center
-]
-const AWAY_POSITIONS: Array[Vector2] = [
-	Vector2(300, 120),   # GK — near top goal
-	Vector2(220, 175),   # DEF (left)
-	Vector2(380, 175),   # DEF (right)
-	Vector2(300, 260),   # MID
-	Vector2(300, 328),   # FWD — near center
-]
-
 @export var team_name: String = ""
 @export var is_home: bool = true
+@export_enum("4-4-2", "4-5-1", "4-3-3", "5-4-1") var formation: int = 0
 
 ## Kit configuration.
 @export var team_id: int = 0
@@ -50,16 +33,21 @@ func _ready() -> void:
 
 ## Spawn player instances at formation positions.
 func _spawn_players() -> void:
-	var positions: Array[Vector2] = HOME_POSITIONS if is_home else AWAY_POSITIONS
-	## Jersey numbers: GK=1, DEF=2,3, MID=4, FWD=5 (matching position order).
-	var jersey_numbers: Array[int] = [1, 2, 3, 4, 5]
-	for i in range(positions.size()):
+	var slots: Array
+	if is_home:
+		slots = FormationPure.get_positions(formation)
+	else:
+		slots = FormationPure.get_away_positions(formation)
+
+	for i in range(slots.size()):
+		var slot: Dictionary = slots[i]
 		var player: CharacterBody2D = PLAYER_SCENE.instantiate()
-		player.position = positions[i]
-		player.formation_position = positions[i]
+		player.position = slot["position"]
+		player.formation_position = slot["position"]
 		player.team_id = team_id
-		player.is_goalkeeper = (i == 0)
-		player.jersey_number = jersey_numbers[i]
+		player.role = slot["role"]
+		player.is_goalkeeper = FormationPure.is_goalkeeper_role(slot["role"])
+		player.jersey_number = i + 1
 		add_child(player)
 
 

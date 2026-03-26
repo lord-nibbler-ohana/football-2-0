@@ -17,6 +17,7 @@ var kit_secondary: Color = Color.BLUE
 ## Team and role metadata (set by team.gd on spawn).
 var team_id: int = 0
 var is_goalkeeper: bool = false
+var role: int = FormationPure.Role.CENTER_MID
 
 ## Jersey number (set by team.gd on spawn).
 var jersey_number: int = 0

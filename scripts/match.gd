@@ -61,9 +61,9 @@ func _setup_players() -> void:
 		player.is_human_controlled = false
 		player.is_selected = false
 
-	# Select the home forward (last spawned = FWD) as human-controlled
+	# Select the home center forward as human-controlled
 	if home_players.size() > 0:
-		selected_player = home_players[home_players.size() - 1]  # Last = FWD
+		selected_player = _find_forward(home_players)
 		selected_player.is_human_controlled = true
 		selected_player.is_selected = true
 
@@ -206,3 +206,11 @@ func _update_clock() -> void:
 func start_match() -> void:
 	match_state.start_play()
 	_update_scoreboard()
+
+
+## Find the center forward in a player list (fallback: last player).
+func _find_forward(players: Array) -> CharacterBody2D:
+	for player in players:
+		if player.role == FormationPure.Role.CENTER_FORWARD:
+			return player
+	return players[players.size() - 1]
