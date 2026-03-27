@@ -135,7 +135,7 @@ func test_slow_ball_allows_pickup():
 func test_ball_at_exact_speed_threshold_blocks():
 	var infos: Array = [_info(Vector2(100, 100))]
 	var result := possession.check_possession(
-		infos, Vector2(105, 100), 0.0, 2.5)
+		infos, Vector2(105, 100), 0.0, PossessionPure.LOOSE_BALL_SPEED_THRESHOLD)
 	assert_eq(result, -1, "Ball at exact speed threshold should block pickup")
 
 
@@ -333,3 +333,154 @@ func test_get_possessor():
 	var infos: Array = [_info(Vector2(100, 100)), _info(Vector2(105, 100))]
 	possession.check_possession(infos, Vector2(104, 100))
 	assert_eq(possession.get_possessor(), 1, "Should return index of closest player")
+
+
+# ===== Anti-oscillation =====
+
+## Helper: simulate possession going to a specific player by placing ball near them.
+## Returns the possessor index.
+func _give_possession(infos: Array, player_idx: int) -> int:
+	var ball_pos: Vector2 = infos[player_idx]["position"] + Vector2(3, 0)
+	return possession.check_possession(infos, ball_pos)
+
+
+## Helper: tick N frames with no one eligible to pick up (ball far away).
+func _tick_empty(infos: Array, n: int) -> void:
+	for i in range(n):
+		possession.check_possession(infos, Vector2(9999, 9999))
+
+
+func test_oscillation_detected_and_cooldown_applied():
+	# Two opposing players far enough apart to give ball to each independently
+	var infos: Array = [
+		_info(Vector2(100, 100), 0),  # Player 0, team 0
+		_info(Vector2(200, 100), 1),  # Player 1, team 1 (far enough apart)
+	]
+	# A picks up
+	_give_possession(infos, 0)
+	assert_eq(possession.possessor_index, 0)
+
+	# Ball goes far away — leash breaks, then player 1 picks up
+	_give_possession(infos, 1)
+	assert_eq(possession.possessor_index, 1)
+
+	# Ball goes far, then player 0 picks up again → A→B→A detected
+	_give_possession(infos, 0)
+	assert_eq(possession.possessor_index, 0)
+
+	# Player 1 should now have an oscillation cooldown
+	assert_true(possession._player_pickup_cooldown.get(1, 0) > 0,
+		"Player 1 should have oscillation cooldown after A→B→A pattern")
+	assert_eq(possession._player_pickup_cooldown[1],
+		PossessionPure.OSCILLATION_COOLDOWN_BASE,
+		"First oscillation should apply base cooldown")
+
+
+func test_oscillation_cooldown_blocks_pickup():
+	var infos: Array = [
+		_info(Vector2(100, 100), 0),
+		_info(Vector2(200, 100), 1),
+	]
+	# Trigger oscillation: A→B→A
+	_give_possession(infos, 0)
+	_give_possession(infos, 1)
+	_give_possession(infos, 0)
+
+	# Player 1 has cooldown. Ball goes loose near player 1 — should NOT pick up.
+	var ball_near_1: Vector2 = infos[1]["position"] + Vector2(3, 0)
+	var result := possession.check_possession(infos, ball_near_1)
+	assert_ne(result, 1,
+		"Player with oscillation cooldown should be blocked from pickup")
+
+
+func test_oscillation_cooldown_expires():
+	var infos: Array = [
+		_info(Vector2(100, 100), 0),
+		_info(Vector2(200, 100), 1),
+	]
+	# Trigger oscillation
+	_give_possession(infos, 0)
+	_give_possession(infos, 1)
+	_give_possession(infos, 0)
+
+	assert_true(possession._player_pickup_cooldown.get(1, 0) > 0)
+
+	# Tick through the cooldown (ball far away, each tick decrements cooldown)
+	_tick_empty(infos, PossessionPure.OSCILLATION_COOLDOWN_BASE)
+
+	# Cooldown should be expired
+	assert_eq(possession._player_pickup_cooldown.get(1, 0), 0,
+		"Cooldown should expire after OSCILLATION_COOLDOWN_BASE frames")
+
+	# Player 1 should be able to pick up again
+	var result := _give_possession(infos, 1)
+	assert_eq(result, 1, "Player should pick up after cooldown expires")
+
+
+func test_oscillation_escalation():
+	var infos: Array = [
+		_info(Vector2(100, 100), 0),
+		_info(Vector2(200, 100), 1),
+	]
+	# First oscillation: A→B→A — player 1 gets cooldown (count=1)
+	_give_possession(infos, 0)
+	_give_possession(infos, 1)
+	_give_possession(infos, 0)
+
+	var first_cd: int = possession._player_pickup_cooldown.get(1, 0)
+	assert_eq(first_cd, PossessionPure.OSCILLATION_COOLDOWN_BASE,
+		"First oscillation = base cooldown")
+
+	# Wait out cooldown, then continue the oscillation cycle
+	# After the gap: _prev_possessor=1, possessor=-1
+	_tick_empty(infos, first_cd)
+
+	# Continue oscillation: B picks up (detected as oscillation, A gets cooldown)
+	_give_possession(infos, 1)
+	# Now A has cooldown too. Wait it out.
+	_tick_empty(infos, PossessionPure.OSCILLATION_COOLDOWN_BASE)
+
+	# Third cycle: A→B→A again — player 1 gets cooldown (count=2, escalated!)
+	_give_possession(infos, 0)
+	_give_possession(infos, 1)
+	_give_possession(infos, 0)
+
+	var escalated_cd: int = possession._player_pickup_cooldown.get(1, 0)
+	assert_gt(escalated_cd, PossessionPure.OSCILLATION_COOLDOWN_BASE,
+		"Repeated oscillation should escalate cooldown beyond base")
+
+
+func test_no_oscillation_for_different_players():
+	var infos: Array = [
+		_info(Vector2(100, 100), 0),  # Player 0
+		_info(Vector2(200, 100), 1),  # Player 1
+		_info(Vector2(300, 100), 1),  # Player 2
+	]
+	# A→B→C — three different players, no oscillation
+	_give_possession(infos, 0)
+	_give_possession(infos, 1)
+	_give_possession(infos, 2)
+
+	# No cooldowns should be applied
+	assert_eq(possession._player_pickup_cooldown.size(), 0,
+		"A→B→C should not trigger oscillation cooldown")
+
+
+func test_oscillation_reset_clears_state():
+	var infos: Array = [
+		_info(Vector2(100, 100), 0),
+		_info(Vector2(200, 100), 1),
+	]
+	# Trigger oscillation
+	_give_possession(infos, 0)
+	_give_possession(infos, 1)
+	_give_possession(infos, 0)
+
+	assert_true(possession._player_pickup_cooldown.size() > 0)
+
+	possession.reset()
+
+	assert_eq(possession._last_possessor, -1, "Reset should clear _last_possessor")
+	assert_eq(possession._prev_possessor, -1, "Reset should clear _prev_possessor")
+	assert_eq(possession._oscillation_count.size(), 0, "Reset should clear _oscillation_count")
+	assert_eq(possession._player_pickup_cooldown.size(), 0, "Reset should clear cooldowns")
