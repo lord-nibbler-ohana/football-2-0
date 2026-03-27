@@ -36,8 +36,15 @@ var has_possession: bool = false
 ## Kick state machine (pure logic).
 var kick_state: KickStatePure
 
+## Slide tackle state machine (pure logic).
+var tackle_state: TackleStatePure
+
 ## Fire button held flag — used for ball passthrough (ball ignores own team while held).
 var fire_held: bool = false
+
+## Yellow card count (two yellows = red).
+var yellow_cards: int = 0
+var red_carded: bool = false
 
 ## AI instances (set by match.gd during setup).
 var outfield_ai: OutfieldAiPure = null
@@ -53,11 +60,27 @@ var _formation_slot: int = 0
 ## Chaser flag — set each frame by match.gd.
 var _is_chaser: bool = false
 
+## Standing tackle engage timer — counts frames the chaser stays in tackle range.
+## Must reach AiConstants.TACKLE_ENGAGE_FRAMES before tackle can trigger.
+var _tackle_engage_timer: int = 0
+
 ## Whether a teammate on this team has possession (set by match.gd).
 var _teammate_has_ball: bool = false
 
+## Whether the GK on this team is distributing (teammates should clear out).
+var _gk_distributing: bool = false
+
+## Whether the opponent GK has the ball (opponents should stop chasing).
+var _opponent_gk_has_ball: bool = false
+
 ## Throw-in mode — when true, match.gd handles movement and animation directly.
 var throwin_mode: bool = false
+
+## Corner kick mode — when true, match.gd handles movement and animation (kick frames).
+var corner_mode: bool = false
+
+## GK distribute mode — AI drives movement, player controls kick only.
+var gk_distribute_mode: bool = false
 
 ## Match-level freeze — when true, player holds position (e.g. during set pieces).
 var match_frozen: bool = false
@@ -72,6 +95,11 @@ const LOSS_STUN_FRAMES := 25  ## 0.5s at 50 Hz
 const LOSS_STUN_SPEED_FACTOR := 0.35  ## Movement speed multiplier during stun
 var loss_stun: int = 0
 var _had_possession_last_frame: bool = false
+
+## Knockdown immunity — after getting up from a slide tackle knockdown,
+## the player cannot be knocked down again for 3 seconds.
+const KNOCKDOWN_IMMUNITY_FRAMES := 150  ## 3.0s at 50 Hz
+var knockdown_immunity: int = 0
 
 ## Reference to the ball node (set by match.gd).
 var ball: CharacterBody2D = null
@@ -91,6 +119,9 @@ const SHEET_PATHS := {
 	KitStyle.VERTICAL_STRIPES: "res://sprites/players/player_vstripes.png",
 	KitStyle.HORIZONTAL_STRIPES: "res://sprites/players/player_hstripes.png",
 }
+
+## Goalkeeper sprite sheet (single variant — palette swap shader handles kit colors).
+const GK_SHEET_PATH := "res://sprites/players/goalkeeper.png"
 
 ## Cell size in the sprite sheet.
 const CELL_W := 16
@@ -164,12 +195,25 @@ const ANIM_SPEEDS := {
 	"getting_up": 6.0,
 	"head": 8.0,
 	"throwin": 6.0,
+	"gk_catch": 6.0,
+	"gk_dive": 8.0,
+}
+
+## GK-specific animation mapping (cells 36-65 in goalkeeper.png).
+const GK_ANIM_MAP := {
+	"gk_catch_n":  [36, 37, 38],
+	"gk_catch_s":  [39, 40, 41],
+	"gk_dive_e_s": [42, 43, 44, 45, 46, 47],
+	"gk_dive_w_s": [48, 49, 50, 51, 52, 53],
+	"gk_dive_e_n": [54, 55, 56, 57, 58, 59],
+	"gk_dive_w_n": [60, 61, 62, 63, 64, 65],
 }
 
 
 func _ready() -> void:
 	animation_state = PlayerAnimationPure.new()
 	kick_state = KickStatePure.new()
+	tackle_state = TackleStatePure.new()
 	_build_sprite_frames()
 	_apply_kit_shader()
 	anim_sprite.sprite_frames = _sprite_frames
@@ -188,6 +232,17 @@ func _physics_process(_delta: float) -> void:
 	# Tick down loss-of-possession stun
 	if loss_stun > 0:
 		loss_stun -= 1
+
+	# Tick down knockdown immunity
+	if knockdown_immunity > 0:
+		knockdown_immunity -= 1
+
+	# Detect getting up from knockdown — apply knockdown immunity
+	if animation_state.state == PlayerAnimationPure.State.GETTING_UP \
+			and animation_state._oneshot_timer <= 1:
+		# Will transition to IDLE this frame or next — grant immunity
+		if knockdown_immunity == 0:
+			knockdown_immunity = KNOCKDOWN_IMMUNITY_FRAMES
 
 	# Detect dispossession (lost ball without kicking) and apply stun
 	if _had_possession_last_frame and not has_possession and kick_cooldown == 0:
@@ -228,6 +283,38 @@ func _physics_process(_delta: float) -> void:
 			anim_sprite.frame = 0
 		return
 
+	# Corner kick mode: match.gd drives movement, show kick animation (not throw-in).
+	if corner_mode:
+		var dir := PlayerAnimationPure._velocity_to_direction(facing_direction)
+		animation_state.direction = dir
+
+		if animation_state.state == PlayerAnimationPure.State.KICKING:
+			# Kick animation playing — tick the oneshot timer
+			if animation_state._oneshot_timer > 0:
+				animation_state._oneshot_timer -= 1
+				if animation_state._oneshot_timer <= 0:
+					animation_state.state = PlayerAnimationPure.State.IDLE
+			var anim_result := animation_state.get_animation_result()
+			anim_sprite.flip_h = anim_result["flip_h"]
+			var anim_n: String = anim_result["animation"]
+			if _sprite_frames.has_animation(anim_n) and anim_sprite.animation != anim_n:
+				anim_sprite.play(anim_n)
+		elif velocity.length() > 1.0:
+			# Walking to the corner flag — show run animation
+			var anim_result := animation_state.update(velocity / 50.0)
+			anim_sprite.flip_h = anim_result["flip_h"]
+			var anim_n: String = anim_result["animation"]
+			if _sprite_frames.has_animation(anim_n) and anim_sprite.animation != anim_n:
+				anim_sprite.play(anim_n)
+		else:
+			# Aiming/charging — show idle facing the goal line
+			var anim_result := animation_state.update(Vector2.ZERO)
+			anim_sprite.flip_h = anim_result["flip_h"]
+			var anim_n: String = anim_result["animation"]
+			if _sprite_frames.has_animation(anim_n) and anim_sprite.animation != anim_n:
+				anim_sprite.play(anim_n)
+		return
+
 	# Match frozen: hold position, show idle in current direction.
 	if match_frozen:
 		velocity = Vector2.ZERO
@@ -238,7 +325,10 @@ func _physics_process(_delta: float) -> void:
 			anim_sprite.play(anim_n)
 		return
 
-	if is_selected:
+	# GK distribute mode: AI drives movement, player controls only the kick.
+	if gk_distribute_mode and is_selected:
+		_handle_gk_distribute()
+	elif is_selected:
 		_handle_human_input()
 	else:
 		# Reset kick state if deselected mid-kick (e.g., after passing)
@@ -266,6 +356,13 @@ func _physics_process(_delta: float) -> void:
 func _handle_human_input() -> void:
 	var input_dir := InputMapper.get_movement_input()
 
+	# Slide tackle active — locked movement in slide direction, capture deflection
+	if tackle_state.is_active():
+		var tackle_result: Dictionary = tackle_state.tick(input_dir)
+		velocity = tackle_result["velocity"] * 50.0
+		move_and_slide()
+		return
+
 	if input_dir != Vector2.ZERO:
 		facing_direction = input_dir
 
@@ -280,12 +377,18 @@ func _handle_human_input() -> void:
 		kick_state.reset()
 		fire_held = false
 
-	# Kick state machine
+	# Kick / tackle state machine
 	match kick_state.state:
 		KickStatePure.State.IDLE:
-			if InputMapper.is_kick_just_pressed() and has_possession and ball:
-				kick_state.start_charge()
-				fire_held = true
+			if InputMapper.is_kick_just_pressed():
+				if has_possession and ball:
+					kick_state.start_charge()
+					fire_held = true
+				elif not has_possession and not is_goalkeeper \
+						and tackle_state.can_tackle():
+					# Fire without ball = slide tackle
+					tackle_state.start_slide(facing_direction, global_position)
+					animation_state.trigger_slide()
 		KickStatePure.State.CHARGING:
 			# Tick charge while held
 			if InputMapper.is_kick_held():
@@ -298,6 +401,60 @@ func _handle_human_input() -> void:
 			kick_state.tick_aftertouch()
 			if not InputMapper.is_kick_held():
 				fire_held = false
+
+
+## Handle GK distribution: AI controls movement, player controls kick.
+## Short tap + direction = pass to defender, long press = long kick to midfield.
+func _handle_gk_distribute() -> void:
+	# AI handles movement — run the GK AI for movement only
+	if ball:
+		var context := _build_ai_context()
+		var ai_result: Dictionary
+		if goalkeeper_ai:
+			ai_result = goalkeeper_ai.tick(context)
+		else:
+			ai_result = {"velocity": Vector2.ZERO, "gk_distributing": false}
+
+		# Apply AI movement
+		var move_dir: Vector2 = ai_result.get("velocity", Vector2.ZERO)
+		if move_dir.length() > 0.01:
+			facing_direction = move_dir.normalized()
+			velocity = move_dir.normalized() * PLAYER_SPEED * 50.0
+		else:
+			velocity = Vector2.ZERO
+		move_and_slide()
+
+		# Check if AI wants to force a kick (timeout or left the box)
+		var ai_kick: String = ai_result.get("kick_action", "none")
+		if ai_kick != "none" and has_possession:
+			_ai_perform_kick(ai_result)
+			gk_distribute_mode = false
+			return
+
+		# Check if distribution ended (lost ball or AI says stop)
+		if not ai_result.get("gk_distributing", false):
+			gk_distribute_mode = false
+			return
+
+	# Player controls kick only (not movement)
+	var input_dir := InputMapper.get_movement_input()
+
+	match kick_state.state:
+		KickStatePure.State.IDLE:
+			if InputMapper.is_kick_just_pressed() and has_possession and ball:
+				kick_state.start_charge()
+				fire_held = true
+		KickStatePure.State.CHARGING:
+			if InputMapper.is_kick_held():
+				kick_state.tick_charge()
+			if InputMapper.is_kick_just_released() or not InputMapper.is_kick_held():
+				_perform_kick(input_dir)
+				gk_distribute_mode = false
+		KickStatePure.State.AFTERTOUCH:
+			kick_state.tick_aftertouch()
+			if not InputMapper.is_kick_held():
+				fire_held = false
+				gk_distribute_mode = false
 
 
 ## Perform the kick — delegates to KickStatePure for pass/shot decision.
@@ -358,6 +515,18 @@ func _handle_ai() -> void:
 		velocity = Vector2.ZERO
 		return
 
+	# Knocked down / getting up — freeze in place, skip all AI logic
+	if animation_state.is_locked() and not tackle_state.is_active():
+		velocity = Vector2.ZERO
+		return
+
+	# Slide tackle active — locked movement
+	if tackle_state.is_active():
+		var tackle_result: Dictionary = tackle_state.tick()
+		velocity = tackle_result["velocity"] * 50.0
+		move_and_slide()
+		return
+
 	var context := _build_ai_context()
 	var ai_result: Dictionary
 
@@ -367,6 +536,18 @@ func _handle_ai() -> void:
 		ai_result = outfield_ai.tick(context)
 	else:
 		velocity = Vector2.ZERO
+		return
+
+	# Check for AI slide tackle trigger
+	if ai_result.get("slide_tackle", false) and tackle_state.can_tackle():
+		var slide_dir: Vector2 = ai_result.get("velocity", facing_direction)
+		if slide_dir.length() < 0.01:
+			slide_dir = facing_direction
+		tackle_state.start_slide(slide_dir.normalized(), global_position)
+		animation_state.trigger_slide()
+		# Apply first frame of slide movement
+		velocity = tackle_state.slide_direction * tackle_state.slide_speed * 50.0
+		move_and_slide()
 		return
 
 	# Apply movement (slowed during loss stun)
@@ -429,6 +610,8 @@ func _build_ai_context() -> Dictionary:
 		"opponent_goal_center": opponent_goal_center,
 		"own_goal_center": own_goal_center,
 		"player_index": player_index,
+		"gk_distributing": _gk_distributing,
+		"opponent_gk_has_ball": _opponent_gk_has_ball,
 	}
 
 
@@ -467,15 +650,22 @@ func _ai_perform_kick(ai_result: Dictionary) -> void:
 func _build_sprite_frames() -> void:
 	_sprite_frames = SpriteFrames.new()
 
-	var sheet_path: String = SHEET_PATHS.get(kit_style, SHEET_PATHS[KitStyle.SOLID])
+	var sheet_path: String
+	if is_goalkeeper:
+		sheet_path = GK_SHEET_PATH
+	else:
+		sheet_path = SHEET_PATHS.get(kit_style, SHEET_PATHS[KitStyle.SOLID])
 	var sheet: Texture2D = load(sheet_path)
 
 	# Remove the default animation
 	if _sprite_frames.has_animation("default"):
 		_sprite_frames.remove_animation("default")
 
-	for anim_name: String in ANIM_MAP:
-		var cells: Array = ANIM_MAP[anim_name]
+	# Build animation map: GKs use standard anims (minus heading/throw-in) + GK-specific
+	var anim_map: Dictionary = _get_anim_map()
+
+	for anim_name: String in anim_map:
+		var cells: Array = anim_map[anim_name]
 		_sprite_frames.add_animation(anim_name)
 
 		# Determine speed from prefix
@@ -504,6 +694,20 @@ func _build_sprite_frames() -> void:
 			_sprite_frames.add_frame(anim_name, atlas)
 
 
+## Get the animation map for this player type.
+func _get_anim_map() -> Dictionary:
+	if not is_goalkeeper:
+		return ANIM_MAP
+	# GKs: standard anims (exclude heading/throw-in) + GK-specific
+	var result := {}
+	for key: String in ANIM_MAP:
+		if key.begins_with("head") or key.begins_with("throwin"):
+			continue
+		result[key] = ANIM_MAP[key]
+	result.merge(GK_ANIM_MAP)
+	return result
+
+
 ## Apply the palette swap shader with kit colors.
 func _apply_kit_shader() -> void:
 	var shader := preload("res://shaders/palette_swap.gdshader")
@@ -512,6 +716,28 @@ func _apply_kit_shader() -> void:
 	mat.set_shader_parameter("kit_primary", kit_primary)
 	mat.set_shader_parameter("kit_secondary", kit_secondary)
 	anim_sprite.material = mat
+
+
+## True if this player is currently in a slide tackle.
+func is_sliding() -> bool:
+	return tackle_state.is_sliding()
+
+
+## True if this player is knocked down or getting up from a tackle.
+func is_knocked_down() -> bool:
+	return animation_state.state in [
+		PlayerAnimationPure.State.KNOCKED_DOWN,
+		PlayerAnimationPure.State.GETTING_UP]
+
+
+## True if this player has knockdown immunity (recently got up).
+func has_knockdown_immunity() -> bool:
+	return knockdown_immunity > 0
+
+
+## True if this player is in any tackle state (sliding or recovering).
+func is_tackling() -> bool:
+	return tackle_state.is_active()
 
 
 ## Set kit colors (called by team.gd before match).

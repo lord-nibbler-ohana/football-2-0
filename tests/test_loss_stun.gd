@@ -214,11 +214,13 @@ func test_dribble_leash_retained_even_when_ineligible():
 	var result := possession.check_possession(infos, ball_pos)
 	assert_eq(result, 0, "Should gain possession initially")
 
-	# Now mark ineligible but still within dribble leash
+	# Now mark ineligible but still within dribble leash — should DROP possession.
+	# An ineligible player (knocked down, stunned) must not retain the ball
+	# via dribble leash, otherwise opponents can never pick it up.
 	infos[0]["eligible"] = false
 	result = possession.check_possession(infos, Vector2(105, 107))
-	assert_eq(result, 0,
-		"Should retain possession via dribble leash even when ineligible")
+	assert_eq(result, -1,
+		"Ineligible player should lose possession even within dribble radius")
 
 
 # ===== Re-dispossession resets stun =====

@@ -563,6 +563,134 @@ def create_pitch_background():
     return Image.fromarray(pitch, "RGBA")
 
 
+def extract_goalkeeper_sprites_semantic(filename):
+    """Extract goalkeeper sprites using the known layout of cjcteamg1.
+
+    The first band (y=0-31) is identical to outfield players (running, idle,
+    kick, slide, knocked down).  Lower bands contain GK-specific animations:
+
+      Row 3 (y=32):  Jump/catch facing N — 3 frames in cols 0-2
+      Row 4 (y=56):  Jump/catch facing S — 3 frames in cols 0-2
+      Row 5 (y=78):  Dive save E facing S — 6 frames in cols 0-5
+      Row 6 (y=104): Dive save W facing S — 6 frames in cols 0-5
+      Row 7 (y=126): Dive save E facing N — 6 frames in cols 0-5
+      Row 8 (y=152): Dive save W facing N — 6 frames in cols 0-5
+
+    Returns (ordered_sprites, img) for packing.
+    """
+    img = Image.open(os.path.join(ORIGINAL_DIR, filename))
+    data = np.array(img)
+
+    def pick_top(col, label):
+        s = _extract_column_half(data, col, "top", BG_INDEX)
+        if s:
+            print(f"    [{label:12s}] x={s[0]:3d} y={s[1]:3d} w={s[2]:2d} h={s[3]:2d}")
+        else:
+            print(f"    [{label:12s}] WARNING: empty top col {col}")
+            s = (col * 16, 0, 1, 1)
+        return s
+
+    def pick_bot(col, label):
+        s = _extract_column_half(data, col, "bot", BG_INDEX)
+        if s:
+            print(f"    [{label:12s}] x={s[0]:3d} y={s[1]:3d} w={s[2]:2d} h={s[3]:2d}")
+        else:
+            print(f"    [{label:12s}] WARNING: empty bot col {col}")
+            s = (col * 16, 16, 1, 1)
+        return s
+
+    def pick_band(col, y_start, band_h, label):
+        s = _extract_band_sprite(data, col, y_start, band_h, BG_INDEX)
+        if s:
+            print(f"    [{label:12s}] x={s[0]:3d} y={s[1]:3d} w={s[2]:2d} h={s[3]:2d}")
+        else:
+            print(f"    [{label:12s}] WARNING: empty band col {col} y={y_start}")
+            s = (col * 16, y_start, 1, 1)
+        return s
+
+    ordered = []
+
+    # --- Standard outfield sprites (cells 0-35) — identical to outfield ---
+    # Running (cells 0-9)
+    ordered.append(pick_top( 4, "S run1"))
+    ordered.append(pick_top( 5, "S run2"))
+    ordered.append(pick_bot( 4, "SE run1"))
+    ordered.append(pick_bot( 5, "SE run2"))
+    ordered.append(pick_top( 7, "E run1"))
+    ordered.append(pick_top( 8, "E run2"))
+    ordered.append(pick_bot(10, "NE run1"))
+    ordered.append(pick_bot(11, "NE run2"))
+    ordered.append(pick_top( 1, "N run1"))
+    ordered.append(pick_top( 2, "N run2"))
+
+    # Idle (cells 10-14)
+    ordered.append(pick_top( 3, "S idle"))
+    ordered.append(pick_bot( 3, "SE idle"))
+    ordered.append(pick_top( 6, "E idle"))
+    ordered.append(pick_bot( 9, "NE idle"))
+    ordered.append(pick_top( 0, "N idle"))
+
+    # Kick (cells 15-19) — reuses idle poses
+    ordered.append(pick_top( 3, "S kick"))
+    ordered.append(pick_bot( 3, "SE kick"))
+    ordered.append(pick_top( 6, "E kick"))
+    ordered.append(pick_bot( 9, "NE kick"))
+    ordered.append(pick_top( 0, "N kick"))
+
+    # Slides (cells 20-27)
+    ordered.append(pick_top(13, "SlideS"))
+    ordered.append(pick_top(17, "SlideSE"))
+    ordered.append(pick_top(15, "SlideE"))
+    ordered.append(pick_top(19, "SlideNE"))
+    ordered.append(pick_top(12, "SlideN"))
+    ordered.append(pick_top(14, "SlideW"))
+    ordered.append(pick_top(16, "SlideSW"))
+    ordered.append(pick_top(18, "SlideNW"))
+
+    # Down/knocked (cells 28-35)
+    ordered.append(pick_bot(12, "DownN"))
+    ordered.append(pick_bot(13, "DownS"))
+    ordered.append(pick_bot(17, "DownSE"))
+    ordered.append(pick_bot(19, "DownNE"))
+    ordered.append(pick_bot(15, "DownE"))
+    ordered.append(pick_bot(14, "DownW"))
+    ordered.append(pick_bot(16, "DownSW"))
+    ordered.append(pick_bot(18, "DownNW"))
+
+    # --- GK-specific animations (cells 36-65) ---
+    # Use band_h=20 to avoid bleeding into the next row (some gaps are only 4px).
+    band_h = 20
+
+    # Jump/catch N (cells 36-38): 3 frames from row 3
+    for frame in range(3):
+        ordered.append(pick_band(frame, 32, band_h, f"CatchN f{frame}"))
+
+    # Jump/catch S (cells 39-41): 3 frames from row 4
+    for frame in range(3):
+        ordered.append(pick_band(frame, 56, band_h, f"CatchS f{frame}"))
+
+    # Dive E facing S (cells 42-47): 6 frames from row 5
+    for frame in range(6):
+        ordered.append(pick_band(frame, 78, band_h, f"DiveES f{frame}"))
+
+    # Dive W facing S (cells 48-53): 6 frames from row 6
+    # West dives are stored right-to-left in the original sheet (extended→standing),
+    # so reverse the column order to get standing→extended playback.
+    for frame in range(5, -1, -1):
+        ordered.append(pick_band(frame, 104, band_h, f"DiveWS f{5-frame}"))
+
+    # Dive E facing N (cells 54-59): 6 frames from row 7
+    for frame in range(6):
+        ordered.append(pick_band(frame, 126, band_h, f"DiveEN f{frame}"))
+
+    # Dive W facing N (cells 60-65): 6 frames from row 8
+    # Reverse column order (same as dive W/S).
+    for frame in range(5, -1, -1):
+        ordered.append(pick_band(frame, 152, band_h, f"DiveWN f{5-frame}"))
+
+    return ordered, img
+
+
 def extract_and_pack_team(filename, output_name, cell_w=16, cell_h=32, cols=10):
     """Extract sprites from a team sheet and pack into a grid sprite sheet."""
     print(f"  {filename}:")
@@ -594,6 +722,16 @@ def main():
     extract_and_pack_team(
         "cjcteam3.png", "player_hstripes.png", cell_w, cell_h, cols
     )
+
+    # Goalkeeper sprite sheet
+    print("\n=== Extracting goalkeeper sprites ===")
+    print("  cjcteamg1.png:")
+    gk_sprites, gk_img = extract_goalkeeper_sprites_semantic("cjcteamg1.png")
+    print(f"    Total: {len(gk_sprites)} sprites mapped")
+    gk_sheet = pack_sprites_to_sheet(gk_img, gk_sprites, cell_w, cell_h, cols)
+    gk_path = os.path.join(PLAYERS_DIR, "goalkeeper.png")
+    gk_sheet.save(gk_path)
+    print(f"  → Saved {gk_path} ({gk_sheet.size[0]}x{gk_sheet.size[1]})")
 
     # Write sprite layout documentation
     write_layout_docs()
@@ -665,8 +803,43 @@ should be positioned at release on frame 3 and hidden during frames 1-2.
 - `player_solid.png` — Solid color kit (from `cjcteam1.png`)
 - `player_vstripes.png` — Vertical stripes (from `cjcteam2.png`)
 - `player_hstripes.png` — Horizontal stripes (from `cjcteam3.png`)
+- `goalkeeper.png` — Goalkeeper (from `cjcteamg1.png`, single variant)
 
 Kit colors A (#FF0000) and B (#0000FF) are replaced by the palette swap shader at runtime.
+
+## Goalkeeper Sprite Sheet (`goalkeeper.png`, 160×224)
+
+Cell size: 16x32 pixels, 10 columns per row.
+Cells 0-35 are identical to outfield players. Cells 36-65 contain GK-specific animations
+(no heading or throw-in for GKs).
+
+| Cells | Content | Details |
+|-------|---------|---------|
+| 0-35 | Standard (run, idle, kick, slide, knocked) | Same as outfield |
+| 36-38 | GK catch facing N | 3 frames |
+| 39-41 | GK catch facing S | 3 frames |
+| 42-47 | GK dive E facing S | 6 frames |
+| 48-53 | GK dive W facing S | 6 frames (reversed from original) |
+| 54-59 | GK dive E facing N | 6 frames |
+| 60-65 | GK dive W facing N | 6 frames (reversed from original) |
+
+### GK ANIM_MAP Reference
+
+```
+"gk_catch_n": [36,37,38], "gk_catch_s": [39,40,41]
+"gk_dive_e_s": [42,43,44,45,46,47], "gk_dive_w_s": [48,49,50,51,52,53]
+"gk_dive_e_n": [54,55,56,57,58,59], "gk_dive_w_n": [60,61,62,63,64,65]
+```
+
+### Original GK Sheet Layout (cjcteamg1.png, 320×256)
+
+- Rows 1-2 (y=0-31): Standard outfield sprites
+- Row 3 (y=32): Jump/catch N — 3 frames in cols 0-2
+- Row 4 (y=56): Jump/catch S — 3 frames in cols 0-2
+- Row 5 (y=78): Dive E facing S — 6 frames in cols 0-5
+- Row 6 (y=104): Dive W facing S — 6 frames in cols 5-0 (right-to-left)
+- Row 7 (y=126): Dive E facing N — 6 frames in cols 0-5
+- Row 8 (y=152): Dive W facing N — 6 frames in cols 5-0 (right-to-left)
 """)
     print(f"  → Saved {doc_path}")
 

@@ -43,3 +43,45 @@ const GOAL_MOUTH_LEFT := CENTER_X - GOAL_MOUTH_HALF  # 258
 const GOAL_MOUTH_RIGHT := CENTER_X + GOAL_MOUTH_HALF  # 342
 const GOAL_DEPTH := 6.0
 const GOAL_DEPTH_VISUAL := 11.0  ## Rendering depth (larger than collision depth for visual fidelity)
+
+## Penalty area (16-meter box). Real: 16.5m deep, 40.3m wide.
+## Scaled to pixel pitch: ~100px deep, ~308px wide.
+const BOX_HALF_W := 154.0  ## Half-width of penalty area
+const BOX_DEPTH := 100.0   ## Depth from goal line
+const BOX_LEFT := CENTER_X - BOX_HALF_W   # 146
+const BOX_RIGHT := CENTER_X + BOX_HALF_W  # 454
+
+## Box Y ranges (goal-line-relative, inward toward pitch center).
+const BOX_BOTTOM_Y_MIN := GOAL_BOTTOM_Y - BOX_DEPTH  # 580
+const BOX_BOTTOM_Y_MAX := GOAL_BOTTOM_Y               # 680
+const BOX_TOP_Y_MIN := GOAL_TOP_Y                     # 40
+const BOX_TOP_Y_MAX := GOAL_TOP_Y + BOX_DEPTH         # 140
+
+
+## 6-yard box (goal area) depth from goal line (~5.5m scaled).
+const SIX_YARD_DEPTH := 33.0
+
+## Corner flag positions (sideline/goal-line intersections).
+const CORNER_TOP_LEFT := Vector2(SIDELINE_LEFT, GOAL_TOP_Y)      # (40, 40)
+const CORNER_TOP_RIGHT := Vector2(SIDELINE_RIGHT, GOAL_TOP_Y)    # (560, 40)
+const CORNER_BOTTOM_LEFT := Vector2(SIDELINE_LEFT, GOAL_BOTTOM_Y)   # (40, 680)
+const CORNER_BOTTOM_RIGHT := Vector2(SIDELINE_RIGHT, GOAL_BOTTOM_Y) # (560, 680)
+
+## Penalty spot positions (~12 yards / 72px from goal line).
+const PENALTY_SPOT_TOP := Vector2(CENTER_X, GOAL_TOP_Y + 72.0)      # (300, 112)
+const PENALTY_SPOT_BOTTOM := Vector2(CENTER_X, GOAL_BOTTOM_Y - 72.0) # (300, 608)
+
+## Goal kick ball placement (6-yard box center).
+const GOALKICK_TOP := Vector2(CENTER_X, GOAL_TOP_Y + SIX_YARD_DEPTH)      # (300, 73)
+const GOALKICK_BOTTOM := Vector2(CENTER_X, GOAL_BOTTOM_Y - SIX_YARD_DEPTH) # (300, 647)
+
+
+## Check if a position is inside a team's penalty area.
+## is_home: true = bottom goal (home GK), false = top goal (away GK).
+static func is_in_box(pos: Vector2, is_home: bool) -> bool:
+	if pos.x < BOX_LEFT or pos.x > BOX_RIGHT:
+		return false
+	if is_home:
+		return pos.y >= BOX_BOTTOM_Y_MIN and pos.y <= BOX_BOTTOM_Y_MAX
+	else:
+		return pos.y >= BOX_TOP_Y_MIN and pos.y <= BOX_TOP_Y_MAX

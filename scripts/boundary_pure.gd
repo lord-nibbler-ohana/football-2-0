@@ -19,6 +19,7 @@ static func clamp_ball(pos: Vector2, vel: Vector2) -> Dictionary:
 	var out_pos := pos
 	var out_vel := vel
 	var throwin := ""
+	var goal_line := ""
 
 	# Left sideline — throw-in
 	if out_pos.x < PitchGeometry.SIDELINE_LEFT - THROWIN_MARGIN:
@@ -32,23 +33,33 @@ static func clamp_ball(pos: Vector2, vel: Vector2) -> Dictionary:
 		out_pos.x = PitchGeometry.SIDELINE_RIGHT
 		out_vel = Vector2.ZERO
 
-	# Top edge — skip goal mouth
-	if out_pos.y < 0.0:
-		if _is_in_goal_mouth_x(out_pos.x):
-			pass  # Let goal detection handle it
-		else:
-			out_pos.y = 0.0
-			out_vel.y = absf(out_vel.y) * BALL_BOUNCE_DAMPING
+	# Goal line detection — outside goal mouth triggers goal kick / corner.
+	# Inside goal mouth, let goal detection handle it.
+	if throwin == "":
+		# Top goal line
+		if out_pos.y <= PitchGeometry.GOAL_TOP_Y:
+			if _is_in_goal_mouth_x(out_pos.x):
+				# Safety clamp at world edge for goal-mouth pass-through
+				if out_pos.y < 0.0:
+					pass  # Let goal detection handle it
+			else:
+				goal_line = "top"
+				out_pos.y = PitchGeometry.GOAL_TOP_Y
+				out_vel = Vector2.ZERO
 
-	# Bottom edge — skip goal mouth
-	if out_pos.y > PitchGeometry.WORLD_H:
-		if _is_in_goal_mouth_x(out_pos.x):
-			pass  # Let goal detection handle it
-		else:
-			out_pos.y = PitchGeometry.WORLD_H
-			out_vel.y = -absf(out_vel.y) * BALL_BOUNCE_DAMPING
+		# Bottom goal line
+		elif out_pos.y >= PitchGeometry.GOAL_BOTTOM_Y:
+			if _is_in_goal_mouth_x(out_pos.x):
+				# Safety clamp at world edge for goal-mouth pass-through
+				if out_pos.y > PitchGeometry.WORLD_H:
+					pass  # Let goal detection handle it
+			else:
+				goal_line = "bottom"
+				out_pos.y = PitchGeometry.GOAL_BOTTOM_Y
+				out_vel = Vector2.ZERO
 
-	return {"position": out_pos, "velocity": out_vel, "throwin": throwin}
+	return {"position": out_pos, "velocity": out_vel, "throwin": throwin,
+		"goal_line": goal_line}
 
 
 ## Clamp player position within world bounds (with small margin).

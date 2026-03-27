@@ -9,11 +9,23 @@ var match_time: float = 0.0
 var all_players: Array = []
 var selected_player: CharacterBody2D = null
 
+## GK distribution state.
+var _gk_prev_selected: CharacterBody2D = null  ## Who was selected before GK distribution
+
 ## Throw-in state.
 var throwin_logic: ThrowinPure = null
 var throwin_player: CharacterBody2D = null  ## The player taking the throw-in
 var throwin_prev_selected: CharacterBody2D = null  ## Who was selected before throw-in
 var throwin_trajectory: Node2D = null  ## Trajectory preview node
+
+## Corner kick state.
+var corner_logic: CornerPure = null
+var corner_player: CharacterBody2D = null  ## The player taking the corner
+var corner_prev_selected: CharacterBody2D = null  ## Who was selected before corner
+
+## Goal kick state.
+var goalkick_gk: CharacterBody2D = null  ## GK taking the goal kick
+var goalkick_arrived: bool = false  ## Whether GK has reached the ball
 
 @onready var ball: CharacterBody2D = $Ball
 @onready var scoreboard: Label = $UI/Scoreboard
@@ -114,6 +126,12 @@ func _physics_process(delta: float) -> void:
 			_tick_throwin_setup()
 		MatchStatePure.State.THROWIN_ACTIVE:
 			_tick_throwin_active()
+		MatchStatePure.State.GOALKICK_SETUP:
+			_tick_goalkick_setup()
+		MatchStatePure.State.CORNER_SETUP:
+			_tick_corner_setup()
+		MatchStatePure.State.CORNER_ACTIVE:
+			_tick_corner_active()
 
 
 ## Check proximity-based possession and handle dribbling.
@@ -136,6 +154,10 @@ func _update_possession() -> void:
 			eligible = false
 		if player.has_loss_stun():
 			eligible = false
+		if player.is_sliding():
+			eligible = false
+		if player.is_knocked_down():
+			eligible = false
 		if passthrough_team_id >= 0 \
 				and player.team_id == passthrough_team_id \
 				and player != selected_player:
@@ -144,6 +166,7 @@ func _update_possession() -> void:
 			"position": player.global_position,
 			"team_id": player.team_id,
 			"is_goalkeeper": player.is_goalkeeper,
+			"is_home": player.is_home,
 			"velocity": player.velocity / 50.0,  # Convert to px/frame
 			"eligible": eligible,
 		})
@@ -163,8 +186,18 @@ func _update_possession() -> void:
 		var possessor: CharacterBody2D = all_players[possessor_idx]
 		possessor.has_possession = true
 
+		# GK pickup in box: play catch animation and enter distribution mode
+		if possessor.is_goalkeeper and possession.was_pickup_this_frame:
+			var in_box := PitchGeometry.is_in_box(
+				possessor.global_position, possessor.is_home)
+			if in_box:
+				possessor.animation_state.trigger_gk_catch()
+				_start_gk_distribution(possessor)
+
 		# Auto-switch: if a teammate gains possession, switch control to them
-		if selected_player \
+		# (skip if GK is distributing — we already switched to GK)
+		if not possessor.gk_distribute_mode \
+				and selected_player \
 				and possessor != selected_player \
 				and possessor.team_id == selected_player.team_id:
 			selected_player.is_selected = false
@@ -198,6 +231,12 @@ func _enforce_boundaries() -> void:
 	var throwin_side: String = ball_result["throwin"]
 	if throwin_side != "":
 		_trigger_throwin(throwin_side)
+		return
+
+	# Check for goal line crossing (goal kick or corner)
+	var goal_line_side: String = ball_result["goal_line"]
+	if goal_line_side != "":
+		_trigger_goal_line_out(goal_line_side)
 		return
 
 	# Player boundary clamp
@@ -280,22 +319,25 @@ var _away_chaser: CharacterBody2D = null
 
 ## Designate one ball-chaser per team each frame.
 ## A team only chases when the ball is loose or the OTHER team has it.
+## No chaser is assigned when the opponent GK has the ball.
 func _update_chasers() -> void:
 	var possessing_team := -1
+	var possessor_is_gk := false
 	for player in all_players:
 		if player.has_possession:
 			possessing_team = player.team_id
+			possessor_is_gk = player.is_goalkeeper
 			break
 
-	# Only chase when ball is loose (possessing_team == -1) or opponent has it
-	if possessing_team != 0:
-		_home_chaser = _pick_chaser(0, _home_chaser)
-	else:
-		_home_chaser = null
-	if possessing_team != 1:
-		_away_chaser = _pick_chaser(1, _away_chaser)
-	else:
-		_away_chaser = null
+	# Only chase when ball is loose or opponent outfield player has it
+	# Don't chase when opponent GK has the ball
+	var home_should_chase: bool = possessing_team != 0 \
+		and not (possessor_is_gk and possessing_team == 1)
+	var away_should_chase: bool = possessing_team != 1 \
+		and not (possessor_is_gk and possessing_team == 0)
+
+	_home_chaser = _pick_chaser(0, _home_chaser) if home_should_chase else null
+	_away_chaser = _pick_chaser(1, _away_chaser) if away_should_chase else null
 
 	for player in all_players:
 		player._is_chaser = (player == _home_chaser or player == _away_chaser)
@@ -347,12 +389,84 @@ func _update_teammate_flags() -> void:
 		player._teammate_has_ball = (possessing_team == player.team_id \
 			and not player.has_possession)
 
+	# Update GK distributing flag on all teammates
+	_update_gk_distribute_flags()
 
-## Check for AI tackles: opponents near ball carrier can force dispossession.
-## Knocks the ball loose by applying a small velocity impulse, breaking the
-## dribble leash. Only AI chasers can tackle (not human-controlled players).
+
+## Start GK distribution — switch control to the GK for kick-only input.
+func _start_gk_distribution(gk: CharacterBody2D) -> void:
+	# Only activate for the human team's GK
+	if selected_player and selected_player.team_id == gk.team_id:
+		_gk_prev_selected = selected_player
+		selected_player.is_selected = false
+		selected_player.is_human_controlled = false
+		gk.is_selected = true
+		gk.is_human_controlled = true
+		gk.gk_distribute_mode = true
+		selected_player = gk
+
+
+## Update the gk_distributing flag on all players.
+## Teammates of a distributing GK should clear out of the way.
+## Also signals opponent players when any GK has possession.
+func _update_gk_distribute_flags() -> void:
+	var distributing_gk: CharacterBody2D = null
+	for player in all_players:
+		if player.is_goalkeeper and player.gk_distribute_mode:
+			distributing_gk = player
+			break
+
+	# Find any GK with possession (covers both human and AI GKs)
+	var gk_with_ball: CharacterBody2D = null
+	for player in all_players:
+		if player.is_goalkeeper and player.has_possession:
+			gk_with_ball = player
+			break
+
+	for player in all_players:
+		if distributing_gk and player.team_id == distributing_gk.team_id \
+				and player != distributing_gk:
+			player._gk_distributing = true
+		else:
+			player._gk_distributing = false
+
+		# Opponents of a GK holding the ball should stop chasing
+		if gk_with_ball and player.team_id != gk_with_ball.team_id:
+			player._opponent_gk_has_ball = true
+		else:
+			player._opponent_gk_has_ball = false
+
+	# Check if distribution ended (GK no longer in distribute mode)
+	if not distributing_gk and _gk_prev_selected:
+		_restore_after_gk_distribute()
+
+
+## Restore control after GK distribution ends.
+func _restore_after_gk_distribute() -> void:
+	if _gk_prev_selected:
+		# Find the GK to deselect
+		for player in all_players:
+			if player.is_goalkeeper and player.is_selected \
+					and player.team_id == _gk_prev_selected.team_id:
+				player.is_selected = false
+				player.is_human_controlled = false
+				break
+		_gk_prev_selected.is_selected = true
+		_gk_prev_selected.is_human_controlled = true
+		selected_player = _gk_prev_selected
+		_gk_prev_selected = null
+
+
+## Check for tackles: slide tackles (committed direction-locked slides) and
+## standing tackles (AI chasers running into ball carrier).
 func _check_tackles() -> void:
-	# Find current possessor
+	_check_slide_tackles()
+	_check_standing_tackles()
+
+
+## Slide tackle resolution: check all sliding players for contact with ball/opponent.
+## Determines clean tackle vs foul based on contact order, approach angle, distance.
+func _check_slide_tackles() -> void:
 	var possessor: CharacterBody2D = null
 	for player in all_players:
 		if player.has_possession:
@@ -361,30 +475,180 @@ func _check_tackles() -> void:
 	if not possessor:
 		return
 
-	# Check if any opponent chaser is within tackle range
+	# Knockdown immunity: carrier who just got up cannot be tackled again
+	if possessor.has_knockdown_immunity():
+		return
+
+	for player in all_players:
+		if not player.is_sliding():
+			continue
+		if player.team_id == possessor.team_id:
+			continue
+
+		var dist_to_ball: float = player.global_position.distance_to(
+			ball.global_position)
+		var dist_to_carrier: float = player.global_position.distance_to(
+			possessor.global_position)
+
+		# No contact — neither ball nor carrier within hit radius
+		if dist_to_ball > TackleStatePure.TACKLE_HIT_RADIUS \
+				and dist_to_carrier > TackleStatePure.TACKLE_HIT_RADIUS:
+			continue
+
+		# Contact! Determine if ball-first (clean) or player-first (potential foul)
+		var ball_first := dist_to_ball <= dist_to_carrier
+
+		if ball_first:
+			_resolve_clean_tackle(player, possessor)
+		else:
+			# Player contact first — foul probability based on angle and distance
+			var slide_dist: float = player.global_position.distance_to(
+				player.tackle_state.slide_start_position)
+			var foul_chance := TackleStatePure.compute_foul_chance(
+				player.tackle_state.slide_direction,
+				possessor.facing_direction,
+				slide_dist)
+
+			if randf() < foul_chance:
+				_resolve_foul(player, possessor, foul_chance)
+			else:
+				# Rough but legal — clean tackle (already knocks carrier down)
+				_resolve_clean_tackle(player, possessor)
+
+		break  # One tackle resolution per frame
+
+
+## Minimum repossession stun after being tackled (frames at 50 Hz).
+const TACKLE_REPOSSESSION_STUN := 50  ## 1.0s — prevents immediate repossession
+
+
+## Clean tackle: knock ball in deflection/slide direction, break possession.
+## Carrier is knocked down for ~3s. Tackler's team gets exclusive pickup window.
+func _resolve_clean_tackle(tackler: CharacterBody2D,
+		carrier: CharacterBody2D) -> void:
+	var knock_dir: Vector2 = tackler.tackle_state.get_knock_direction()
+	ball.kick(knock_dir * AiConstants.TACKLE_KNOCK_SPEED,
+		AiConstants.TACKLE_KNOCK_LOFT, tackler)
+	carrier.has_possession = false
+	carrier.kick_cooldown = carrier.KICK_COOLDOWN_FRAMES
+	carrier.loss_stun = TACKLE_REPOSSESSION_STUN
+	carrier.animation_state.trigger_knockdown()
+	carrier.velocity = Vector2.ZERO
+
+	# Tackler's team gets exclusive pickup rights
+	possession.set_tackle_exclusive(
+		tackler.team_id, AiConstants.TACKLE_EXCLUSIVE_FRAMES)
+	# Also apply team-wide cooldowns as backup
+	possession.apply_team_repossess_cooldown(
+		carrier.team_id, AiConstants.TEAM_REPOSSESS_COOLDOWN)
+	possession.apply_team_contest_cooldown(
+		carrier.team_id, AiConstants.TEAM_CONTEST_COOLDOWN)
+
+
+## Foul: knock carrier down, stop ball at foul spot, card decision.
+func _resolve_foul(tackler: CharacterBody2D, carrier: CharacterBody2D,
+		foul_chance: float) -> void:
+	# Knock down the fouled player
+	carrier.animation_state.trigger_knockdown()
+	carrier.velocity = Vector2.ZERO
+	carrier.has_possession = false
+
+	# Stop the ball at foul location and give it to fouled team
+	ball.reset_ball()
+	ball.global_position = carrier.global_position
+
+	# End tackler's slide early, force into recovery
+	tackler.tackle_state.force_recovery()
+	tackler.animation_state.state = PlayerAnimationPure.State.IDLE
+
+	# Card decision
+	if TackleStatePure.should_show_card(foul_chance):
+		tackler.yellow_cards += 1
+		if tackler.yellow_cards >= 2:
+			tackler.red_carded = true
+
+	# Clear stun on fouled player so they can resume quickly
+	carrier.loss_stun = 0
+	carrier.kick_cooldown = 0
+
+
+## Standing tackles: AI chasers running near ball carrier can force dispossession.
+## Uses an engage timer: chaser must stay in range for TACKLE_ENGAGE_FRAMES
+## before the per-frame probability kicks in. This prevents instant dispossession.
+## Also checks team-wide contest cooldown to prevent ping-pong.
+func _check_standing_tackles() -> void:
+	var possessor: CharacterBody2D = null
+	for player in all_players:
+		if player.has_possession:
+			possessor = player
+			break
+	if not possessor:
+		# No possessor — reset all engage timers
+		for player in all_players:
+			player._tackle_engage_timer = 0
+		return
+
+	# Knockdown immunity: carrier who just got up cannot be tackled again
+	if possessor.has_knockdown_immunity():
+		for player in all_players:
+			player._tackle_engage_timer = 0
+		return
+
 	for player in all_players:
 		if player.team_id == possessor.team_id:
+			player._tackle_engage_timer = 0
 			continue
 		if player.is_goalkeeper:
 			continue
 		if not player._is_chaser:
+			player._tackle_engage_timer = 0
 			continue
 		if player.has_kick_cooldown() or player.has_loss_stun():
+			player._tackle_engage_timer = 0
 			continue
-		var dist: float = player.global_position.distance_to(ball.global_position)
-		if dist > AiConstants.TACKLE_RANGE:
+		if player.is_tackling():
+			continue  # Already in a slide tackle
+
+		# Check team-wide contest cooldown
+		if not possession.can_team_contest(player.team_id):
+			player._tackle_engage_timer = 0
 			continue
 
-		# Roll for tackle success
+		var dist: float = player.global_position.distance_to(ball.global_position)
+		if dist > AiConstants.TACKLE_RANGE:
+			player._tackle_engage_timer = 0
+			continue
+
+		# In range — tick up engage timer
+		player._tackle_engage_timer += 1
+
+		# Must stay in range for TACKLE_ENGAGE_FRAMES before tackle can trigger
+		if player._tackle_engage_timer < AiConstants.TACKLE_ENGAGE_FRAMES:
+			continue
+
 		if randf() < AiConstants.TACKLE_SUCCESS_CHANCE:
-			# Knock ball loose — push it away from tackler
 			var knock_dir: Vector2 = (ball.global_position - player.global_position).normalized()
 			if knock_dir.length() < 0.1:
 				knock_dir = possessor.facing_direction
-			ball.kick(knock_dir * 2.5, 0.0, player)
+			ball.kick(knock_dir * AiConstants.TACKLE_KNOCK_SPEED,
+				AiConstants.TACKLE_KNOCK_LOFT, player)
 			possessor.has_possession = false
 			possessor.kick_cooldown = possessor.KICK_COOLDOWN_FRAMES
-			break  # Only one tackle per frame
+			possessor.loss_stun = TACKLE_REPOSSESSION_STUN
+			possessor.animation_state.trigger_knockdown()
+			possessor.velocity = Vector2.ZERO
+
+			# Tackler's team gets exclusive pickup rights
+			possession.set_tackle_exclusive(
+				player.team_id, AiConstants.TACKLE_EXCLUSIVE_FRAMES)
+			# Also apply team-wide cooldowns as backup
+			possession.apply_team_repossess_cooldown(
+				possessor.team_id, AiConstants.TEAM_REPOSSESS_COOLDOWN)
+			possession.apply_team_contest_cooldown(
+				possessor.team_id, AiConstants.TEAM_CONTEST_COOLDOWN)
+
+			player._tackle_engage_timer = 0
+			break
 
 
 # ── Throw-in ────────────────────────────────────────────────────────────────
@@ -634,3 +898,316 @@ func _find_nearest_thrower(pos: Vector2, team_id: int) -> CharacterBody2D:
 			best_player = player
 
 	return best_player
+
+
+## Find the goalkeeper for the given team.
+func _find_gk(team_id: int) -> CharacterBody2D:
+	for player in all_players:
+		if player.team_id == team_id and player.is_goalkeeper:
+			return player
+	return null
+
+
+# ── Goal Line Out ──────────────────────────────────────────────────────────
+
+## Route a goal-line crossing to either goal kick or corner kick.
+func _trigger_goal_line_out(side: String) -> void:
+	var last_touch_team_id := -1
+	if ball.last_kicker:
+		last_touch_team_id = ball.last_kicker.team_id
+
+	# Which team defends this goal?
+	# Top goal (Y=40): Away (team_id=1) defends.
+	# Bottom goal (Y=680): Home (team_id=0) defends.
+	var defending_team_id: int
+	if side == "top":
+		defending_team_id = 1  # away defends top
+	else:
+		defending_team_id = 0  # home defends bottom
+
+	if last_touch_team_id == defending_team_id:
+		# Defender touched last → corner for attacking team
+		var attacking_team_id := 1 - defending_team_id
+		_trigger_corner(side, attacking_team_id)
+	else:
+		# Attacker touched last (or unknown) → goal kick for defending team
+		_trigger_goalkick(side, defending_team_id)
+
+
+# ── Goal Kick ──────────────────────────────────────────────────────────────
+
+## Trigger a goal kick: GK walks to 6-yard box and distributes.
+func _trigger_goalkick(side: String, team_id: int) -> void:
+	# Stop ball and clear possession
+	ball.reset_ball()
+	var placement: Vector2
+	if side == "top":
+		placement = PitchGeometry.GOALKICK_TOP
+	else:
+		placement = PitchGeometry.GOALKICK_BOTTOM
+	ball.global_position = placement
+	ball.visible = false
+
+	possession.reset()
+	for player in all_players:
+		player.has_possession = false
+
+	# Find the GK for this team
+	goalkick_gk = _find_gk(team_id)
+	goalkick_arrived = false
+
+	if not goalkick_gk:
+		# Fallback: just resume play
+		ball.visible = true
+		return
+
+	# Freeze all players during setup
+	for player in all_players:
+		if player != goalkick_gk:
+			player.match_frozen = true
+
+	match_state.record_goalkick(placement, side, team_id)
+
+
+## Tick GOALKICK_SETUP: walk GK to ball, then enter distribution mode.
+func _tick_goalkick_setup() -> void:
+	if not goalkick_gk:
+		_finish_goalkick()
+		return
+
+	var target_pos := match_state.goalkick_position
+
+	if not goalkick_arrived:
+		# Walk GK toward the ball placement
+		var to_target := target_pos - goalkick_gk.global_position
+		if to_target.length() < 4.0:
+			# Arrived
+			goalkick_gk.global_position = target_pos
+			goalkick_gk.velocity = Vector2.ZERO
+			goalkick_arrived = true
+			# Show ball and enter GK distribution
+			ball.visible = true
+			ball.global_position = target_pos
+			# Unfreeze players
+			for player in all_players:
+				player.match_frozen = false
+			# Enter GK distribution mode (reuses existing system)
+			_start_gk_distribution(goalkick_gk)
+			match_state.goalkick_complete()
+			_finish_goalkick_state()
+		else:
+			var walk_vel := to_target.normalized() * 1.5
+			goalkick_gk.facing_direction = walk_vel.normalized()
+			goalkick_gk.velocity = walk_vel * 50.0
+			goalkick_gk.move_and_slide()
+
+
+## Clean up goal kick state (called after entering GK distribution).
+func _finish_goalkick_state() -> void:
+	goalkick_gk = null
+	goalkick_arrived = false
+
+
+## Fallback finish for goal kick if GK is missing.
+func _finish_goalkick() -> void:
+	for player in all_players:
+		player.match_frozen = false
+	ball.visible = true
+	goalkick_gk = null
+	goalkick_arrived = false
+	match_state.goalkick_complete()
+
+
+# ── Corner Kick ────────────────────────────────────────────────────────────
+
+## Trigger a corner kick.
+func _trigger_corner(side: String, team_id: int) -> void:
+	# Stop ball and clear possession
+	ball.reset_ball()
+	possession.reset()
+	for player in all_players:
+		player.has_possession = false
+
+	# Determine which corner flag (use ball X to pick left or right)
+	var corner_pos: Vector2
+	var ball_x := ball.global_position.x
+	if side == "top":
+		if ball_x < PitchGeometry.CENTER_X:
+			corner_pos = PitchGeometry.CORNER_TOP_LEFT
+		else:
+			corner_pos = PitchGeometry.CORNER_TOP_RIGHT
+	else:
+		if ball_x < PitchGeometry.CENTER_X:
+			corner_pos = PitchGeometry.CORNER_BOTTOM_LEFT
+		else:
+			corner_pos = PitchGeometry.CORNER_BOTTOM_RIGHT
+
+	ball.global_position = corner_pos
+	ball.visible = false
+
+	# Find nearest outfield player from the taking team
+	corner_player = _find_nearest_thrower(corner_pos, team_id)
+	if not corner_player:
+		ball.visible = true
+		return
+
+	# Save previous selection and switch control to corner taker
+	corner_prev_selected = selected_player
+	if selected_player:
+		selected_player.is_selected = false
+		selected_player.is_human_controlled = false
+
+	# Set up corner logic
+	corner_logic = CornerPure.new()
+	corner_logic.setup(corner_pos, side)
+
+	# Record in match state
+	match_state.record_corner(corner_pos, side, team_id)
+
+	# Mark corner taker, freeze everyone else
+	corner_player.corner_mode = true
+	corner_player.is_selected = true
+	corner_player.is_human_controlled = true
+	for player in all_players:
+		if player != corner_player:
+			player.match_frozen = true
+
+	# Create/reuse trajectory preview node
+	if not throwin_trajectory:
+		throwin_trajectory = Node2D.new()
+		throwin_trajectory.set_script(
+			load("res://scripts/throwin_trajectory.gd"))
+		add_child(throwin_trajectory)
+
+
+## Tick CORNER_SETUP: walk corner taker to the flag.
+func _tick_corner_setup() -> void:
+	if not corner_player or not corner_logic:
+		_finish_corner()
+		return
+
+	var target_pos := match_state.corner_position
+
+	var walk_vel := corner_logic.get_walk_velocity(
+		corner_player.global_position, target_pos)
+
+	if walk_vel == Vector2.ZERO or corner_logic.check_arrived(
+			corner_player.global_position, target_pos):
+		# Arrived — snap to position and enter aiming phase
+		corner_player.global_position = target_pos
+		corner_player.velocity = Vector2.ZERO
+		corner_logic.phase = CornerPure.Phase.AIMING
+		# Face toward the goal line (closest line direction), not the aim direction
+		corner_player.facing_direction = corner_logic.facing_toward_line
+		match_state.corner_ready()
+	else:
+		corner_player.facing_direction = walk_vel.normalized()
+		corner_player.velocity = walk_vel * 50.0
+		corner_player.move_and_slide()
+
+
+## Tick CORNER_ACTIVE: aim, charge, kick.
+func _tick_corner_active() -> void:
+	if not corner_player or not corner_logic:
+		_finish_corner()
+		return
+
+	match corner_logic.phase:
+		CornerPure.Phase.AIMING:
+			_corner_handle_input()
+			_update_corner_trajectory()
+		CornerPure.Phase.CHARGING:
+			_corner_handle_input()
+			_update_corner_trajectory()
+		CornerPure.Phase.KICKING:
+			corner_logic.tick_post_kick()
+			corner_player.velocity = Vector2.ZERO
+			# Unfreeze other players when kick animation ends
+			if corner_logic.phase == CornerPure.Phase.DONE:
+				for player in all_players:
+					player.match_frozen = false
+				_finish_corner()
+		CornerPure.Phase.DONE:
+			_finish_corner()
+
+
+## Handle input during corner aiming/charging.
+func _corner_handle_input() -> void:
+	var input_dir := InputMapper.get_raw_movement_input()
+
+	# Update aim direction (trajectory only, player keeps facing the goal line)
+	corner_logic.update_aim(input_dir)
+
+	# Freeze corner taker position
+	corner_player.velocity = Vector2.ZERO
+
+	# Button handling
+	if corner_logic.phase == CornerPure.Phase.AIMING:
+		if InputMapper.is_kick_just_pressed():
+			corner_logic.start_charge()
+	elif corner_logic.phase == CornerPure.Phase.CHARGING:
+		if InputMapper.is_kick_held():
+			corner_logic.tick_charge()
+		if InputMapper.is_kick_just_released() or not InputMapper.is_kick_held():
+			_perform_corner()
+
+
+## Perform the actual corner kick.
+func _perform_corner() -> void:
+	var result := corner_logic.release()
+
+	# Show and kick ball (is_set_piece=true for extended aftertouch)
+	ball.visible = true
+	ball.global_position = match_state.corner_position
+	ball.kick(result["velocity"], result["up_velocity"], corner_player, true)
+
+	# Play kick animation — face toward the goal line
+	corner_player.animation_state.direction = \
+		PlayerAnimationPure._velocity_to_direction(corner_logic.facing_toward_line)
+	corner_player.animation_state.trigger_kick()
+
+	# Give corner taker a kick cooldown so they don't immediately repossess
+	corner_player.kick_cooldown = corner_player.KICK_COOLDOWN_FRAMES
+
+	# Hide trajectory
+	if throwin_trajectory:
+		throwin_trajectory.hide_trajectory()
+
+
+## Update the corner trajectory preview dots.
+func _update_corner_trajectory() -> void:
+	if not throwin_trajectory or not corner_logic:
+		return
+	var points := corner_logic.compute_trajectory(match_state.corner_position)
+	throwin_trajectory.update_trajectory(points)
+
+
+## Finish the corner kick sequence and return to normal play.
+func _finish_corner() -> void:
+	# Unfreeze all players
+	for player in all_players:
+		player.match_frozen = false
+
+	if corner_player:
+		corner_player.corner_mode = false
+		corner_player.is_selected = false
+		corner_player.is_human_controlled = false
+
+	# Restore previous selected player
+	if corner_prev_selected:
+		corner_prev_selected.is_selected = true
+		corner_prev_selected.is_human_controlled = true
+		selected_player = corner_prev_selected
+	elif corner_player:
+		corner_player.is_selected = true
+		corner_player.is_human_controlled = true
+		selected_player = corner_player
+
+	corner_player = null
+	corner_prev_selected = null
+	corner_logic = null
+
+	if throwin_trajectory:
+		throwin_trajectory.hide_trajectory()
+
+	match_state.corner_complete()

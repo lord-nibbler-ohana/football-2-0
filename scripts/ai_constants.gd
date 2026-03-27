@@ -19,7 +19,6 @@ const REACTION_DELAY := 15  ## Frames before first kick decision (0.3s)
 const DRIBBLE_MIN_FRAMES := 20  ## Minimum dribble before passing (0.4s)
 const DRIBBLE_MAX_FRAMES := 75  ## Maximum dribble — force a pass (1.5s)
 const PRESSURE_PASS_FRAMES := 15  ## Pass sooner when opponent nearby (0.3s)
-const GK_HOLD_FRAMES := 25  ## Frames GK holds ball before distributing (0.5s)
 
 ## Shooting.
 const SHOOT_RANGE := 140.0  ## px from goal center
@@ -39,10 +38,17 @@ const CROSS_CHARGE := 4  ## Charge frames for a cross (medium power pass)
 
 ## Goalkeeper.
 const GK_ARC_RADIUS := 40.0  ## px from goal center
-const GK_RUSH_TRIGGER_DISTANCE := 120.0
-const GK_RUSH_BALL_SPEED_MIN := 1.0  ## Ball must be moving toward goal
+const GK_RUSH_TRIGGER_DISTANCE := 140.0  ## Slightly larger to give GK more time
+const GK_RUSH_BALL_SPEED_MIN := 0.5  ## Ball must be moving toward goal (lower = more reactive)
 const GK_X_MARGIN := 15.0  ## px beyond goal mouth GK can move
 const GK_MAX_Y_FROM_GOAL := 60.0  ## px GK can advance from goal line
+const GK_HOLD_FRAMES := 15  ## Frames GK holds ball before moving (0.3s)
+const GK_DISTRIBUTE_SPEED := 0.7  ## Walk speed while carrying ball (relative to PLAYER_SPEED)
+const GK_DISTRIBUTE_MAX_FRAMES := 100  ## Max frames before forced kick (2s)
+const GK_DISTRIBUTE_ADVANCE := 70.0  ## How far GK runs out of goal before stopping
+const GK_CLEAR_CHARGE := 8  ## Charge frames for a clearing kick outside the box
+const GK_LONG_KICK_CHARGE := 10  ## Charge frames for a long distribution kick
+const GK_TEAMMATE_CLEAR_RADIUS := 80.0  ## Teammates stay this far from GK with ball
 
 ## Support runs.
 const SUPPORT_RUN_DISTANCE := 100.0  ## px ahead of ball carrier
@@ -54,8 +60,20 @@ const TEAMMATE_AVOIDANCE_RADIUS := 35.0  ## px — teammates steer away from bal
 const TEAMMATE_AVOIDANCE_STRENGTH := 1.5  ## Multiplier on avoidance push
 
 ## Tackling / ball contest.
-const TACKLE_RANGE := 12.0  ## px — chaser can contest possession at this distance
-const TACKLE_SUCCESS_CHANCE := 0.35  ## Per-frame probability of winning the ball when in range
+const TACKLE_RANGE := 10.0  ## px — chaser can contest possession at this distance (standing tackle)
+const TACKLE_ENGAGE_FRAMES := 8  ## Frames chaser must stay in range before tackle can trigger (0.16s)
+const TACKLE_SUCCESS_CHANCE := 0.12  ## Per-frame probability AFTER engage period (was 0.35)
+const TACKLE_KNOCK_SPEED := 7.0  ## px/frame — strong knock to clear contested zone
+const TACKLE_KNOCK_LOFT := 0.5  ## Vertical velocity on tackle knock — ball goes briefly airborne
+const TACKLE_EXCLUSIVE_FRAMES := 25  ## Frames (0.5s) — only tackler's team can pick up ball
+
+## Team-wide contest cooldown — prevents ping-pong across different players.
+const TEAM_CONTEST_COOLDOWN := 25  ## Frames (0.5s) — after losing ball via tackle, whole team can't re-tackle
+const TEAM_REPOSSESS_COOLDOWN := 30  ## Frames (0.6s) — after losing ball, whole team can't pick up ball
+
+## AI slide tackle.
+const AI_SLIDE_TRIGGER_DISTANCE := 22.0  ## px — AI initiates slide when this close to opponent with ball
+const AI_SLIDE_TRIGGER_CHANCE := 0.03  ## Per-frame probability of deciding to slide when in range (was 0.08)
 
 ## Role shift weights for zone target generation.
 ## Keys are FormationPure.Role values, values are {x_weight, y_weight, y_min_offset, y_max_offset}.

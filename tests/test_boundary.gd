@@ -10,6 +10,7 @@ func test_ball_inside_bounds_unchanged():
 	assert_eq(result["position"], Vector2(300, 360))
 	assert_eq(result["velocity"], Vector2(2.0, -1.5))
 	assert_eq(result["throwin"], "", "no throw-in inside bounds")
+	assert_eq(result["goal_line"], "", "no goal line inside bounds")
 
 
 # ── Ball: left sideline triggers throw-in ──
@@ -32,23 +33,24 @@ func test_ball_right_sideline_throwin():
 	assert_eq(result["throwin"], "right", "right throw-in triggered")
 
 
-# ── Ball: top edge bounce (outside goal mouth) ──
+# ── Ball: top goal line triggers goal_line (outside goal mouth) ──
 
-func test_ball_top_edge_bounces_outside_goal():
+func test_ball_top_goal_line_outside_goal_mouth():
 	var result := BoundaryPure.clamp_ball(
-		Vector2(100, -3), Vector2(1.0, -5.0))
-	assert_eq(result["position"].y, 0.0)
-	assert_gt(result["velocity"].y, 0.0, "velocity.y should reflect positive")
-	assert_almost_eq(result["velocity"].y, 5.0 * BoundaryPure.BALL_BOUNCE_DAMPING, 0.01)
+		Vector2(100, PitchGeometry.GOAL_TOP_Y - 3), Vector2(1.0, -5.0))
+	assert_eq(result["position"].y, PitchGeometry.GOAL_TOP_Y, "clamped to goal line")
+	assert_eq(result["velocity"], Vector2.ZERO, "velocity zeroed on goal line out")
+	assert_eq(result["goal_line"], "top", "top goal line triggered")
 
 
-# ── Ball: bottom edge bounce (outside goal mouth) ──
+# ── Ball: bottom goal line triggers goal_line (outside goal mouth) ──
 
-func test_ball_bottom_edge_bounces_outside_goal():
+func test_ball_bottom_goal_line_outside_goal_mouth():
 	var result := BoundaryPure.clamp_ball(
-		Vector2(500, PitchGeometry.WORLD_H + 2), Vector2(0.0, 3.0))
-	assert_eq(result["position"].y, PitchGeometry.WORLD_H)
-	assert_lt(result["velocity"].y, 0.0, "velocity.y should reflect negative")
+		Vector2(500, PitchGeometry.GOAL_BOTTOM_Y + 2), Vector2(0.0, 3.0))
+	assert_eq(result["position"].y, PitchGeometry.GOAL_BOTTOM_Y, "clamped to goal line")
+	assert_eq(result["velocity"], Vector2.ZERO, "velocity zeroed on goal line out")
+	assert_eq(result["goal_line"], "bottom", "bottom goal line triggered")
 
 
 # ── Ball: top goal mouth — no bounce ──
@@ -81,20 +83,22 @@ func test_ball_corner_triggers_throwin():
 
 # ── Ball: goal mouth edge boundary ──
 
-func test_ball_goal_mouth_left_edge_bounces():
-	# Just outside goal mouth on the left — should bounce
+func test_ball_goal_mouth_left_edge_triggers_goal_line():
+	# Just outside goal mouth on the left — should trigger goal line out
 	var x := PitchGeometry.GOAL_MOUTH_LEFT - 1.0
 	var result := BoundaryPure.clamp_ball(
-		Vector2(x, -3), Vector2(0.0, -5.0))
-	assert_eq(result["position"].y, 0.0, "outside goal mouth should bounce")
+		Vector2(x, PitchGeometry.GOAL_TOP_Y - 3), Vector2(0.0, -5.0))
+	assert_eq(result["goal_line"], "top", "outside goal mouth should trigger goal line")
+	assert_eq(result["position"].y, PitchGeometry.GOAL_TOP_Y, "clamped to goal line")
 
 
-func test_ball_goal_mouth_right_edge_no_bounce():
-	# Just inside goal mouth on the right — should not bounce
+func test_ball_goal_mouth_right_edge_no_goal_line():
+	# Just inside goal mouth on the right — should pass through for goal detection
 	var x := PitchGeometry.GOAL_MOUTH_RIGHT
 	var result := BoundaryPure.clamp_ball(
-		Vector2(x, -3), Vector2(0.0, -5.0))
-	assert_eq(result["position"].y, -3.0, "inside goal mouth should not bounce")
+		Vector2(x, PitchGeometry.GOAL_TOP_Y - 3), Vector2(0.0, -5.0))
+	assert_eq(result["goal_line"], "", "inside goal mouth should not trigger goal line")
+	assert_eq(result["position"].y, PitchGeometry.GOAL_TOP_Y - 3, "inside goal mouth should not clamp")
 
 
 # ── Player: inside bounds unchanged ──

@@ -54,19 +54,20 @@ func _update_state(context: Dictionary) -> void:
 	var is_chaser: bool = context["is_chaser"]
 
 	var teammate_has_ball: bool = context.get("teammate_has_ball", false)
+	var opponent_gk_has_ball: bool = context.get("opponent_gk_has_ball", false)
 
 	match state:
 		State.HOLD_POSITION:
 			if has_possession:
 				_enter_on_ball()
-			elif is_chaser and not teammate_has_ball:
+			elif is_chaser and not teammate_has_ball and not opponent_gk_has_ball:
 				state = State.CHASE_BALL
 			elif _should_support_run(context):
 				state = State.SUPPORT_RUN
 		State.CHASE_BALL:
 			if has_possession:
 				_enter_on_ball()
-			elif not is_chaser or teammate_has_ball:
+			elif not is_chaser or teammate_has_ball or opponent_gk_has_ball:
 				state = State.HOLD_POSITION
 		State.SUPPORT_RUN:
 			if has_possession:
@@ -104,8 +105,15 @@ func _tick_hold_position(context: Dictionary) -> Dictionary:
 	if to_target.length() > AiConstants.APPROACH_STOP_DISTANCE:
 		vel = to_target.normalized()
 
-	# Steer away from ball carrier if teammate has the ball and we're too close
-	if teammate_has_ball:
+	# GK distributing: stay far away from the ball to give GK space
+	var gk_distributing: bool = context.get("gk_distributing", false)
+	if gk_distributing:
+		var to_ball := my_pos - ball_pos  # AWAY from ball
+		var dist_to_ball := to_ball.length()
+		if dist_to_ball < AiConstants.GK_TEAMMATE_CLEAR_RADIUS and dist_to_ball > 0.1:
+			vel = to_ball.normalized()  # Move directly away
+	elif teammate_has_ball:
+		# Steer away from ball carrier if teammate has the ball and we're too close
 		var to_ball := my_pos - ball_pos  # AWAY from ball
 		var dist_to_ball := to_ball.length()
 		if dist_to_ball < AiConstants.TEAMMATE_AVOIDANCE_RADIUS and dist_to_ball > 0.1:
@@ -120,7 +128,7 @@ func _tick_hold_position(context: Dictionary) -> Dictionary:
 	}
 
 
-## CHASE_BALL: move toward ball position. When close enough, attempt tackle.
+## CHASE_BALL: move toward ball position. When close enough, initiate slide tackle.
 func _tick_chase_ball(context: Dictionary) -> Dictionary:
 	var ball_pos: Vector2 = context["ball_position"]
 	var my_pos: Vector2 = context["my_position"]
@@ -129,24 +137,22 @@ func _tick_chase_ball(context: Dictionary) -> Dictionary:
 	var to_ball := ball_pos - my_pos
 	var dist := to_ball.length()
 
-	# When within tackle range of an opponent who has the ball, attempt to steal
-	if dist < AiConstants.TACKLE_RANGE:
+	# When within slide trigger distance, attempt a slide tackle
+	if dist < AiConstants.AI_SLIDE_TRIGGER_DISTANCE:
 		var opponent_has_ball := false
 		for p in context["all_players"]:
-			# Check if any opponent is very close to ball (i.e. has it)
 			if int(p["team_id"]) != my_team_id:
 				var p_pos: Vector2 = Vector2(p["position"])
 				if p_pos.distance_to(ball_pos) < 10.0:
 					opponent_has_ball = true
 					break
-		if opponent_has_ball and randf() < AiConstants.TACKLE_SUCCESS_CHANCE:
-			# Successful tackle — kick ball away from opponent
-			var attack_dir: Vector2 = context["attack_direction"]
+		if opponent_has_ball and randf() < AiConstants.AI_SLIDE_TRIGGER_CHANCE:
 			return {
 				"velocity": to_ball.normalized(),
-				"kick_action": "clear",
-				"kick_direction": attack_dir,
-				"kick_charge": 2,
+				"kick_action": "none",
+				"kick_direction": Vector2.ZERO,
+				"kick_charge": 1,
+				"slide_tackle": true,
 			}
 
 	# Keep chasing

@@ -58,5 +58,40 @@ should be positioned at release on frame 3 and hidden during frames 1-2.
 - `player_solid.png` — Solid color kit (from `cjcteam1.png`)
 - `player_vstripes.png` — Vertical stripes (from `cjcteam2.png`)
 - `player_hstripes.png` — Horizontal stripes (from `cjcteam3.png`)
+- `goalkeeper.png` — Goalkeeper (from `cjcteamg1.png`, single variant)
 
 Kit colors A (#FF0000) and B (#0000FF) are replaced by the palette swap shader at runtime.
+
+## Goalkeeper Sprite Sheet (`goalkeeper.png`, 160×224)
+
+Cell size: 16x32 pixels, 10 columns per row.
+Cells 0-35 are identical to outfield players. Cells 36-65 contain GK-specific animations
+(no heading or throw-in for GKs).
+
+| Cells | Content | Details |
+|-------|---------|---------|
+| 0-35 | Standard (run, idle, kick, slide, knocked) | Same as outfield |
+| 36-38 | GK catch facing N | 3 frames |
+| 39-41 | GK catch facing S | 3 frames |
+| 42-47 | GK dive E facing S | 6 frames |
+| 48-53 | GK dive W facing S | 6 frames (reversed from original) |
+| 54-59 | GK dive E facing N | 6 frames |
+| 60-65 | GK dive W facing N | 6 frames (reversed from original) |
+
+### GK ANIM_MAP Reference
+
+```
+"gk_catch_n": [36,37,38], "gk_catch_s": [39,40,41]
+"gk_dive_e_s": [42,43,44,45,46,47], "gk_dive_w_s": [48,49,50,51,52,53]
+"gk_dive_e_n": [54,55,56,57,58,59], "gk_dive_w_n": [60,61,62,63,64,65]
+```
+
+### Original GK Sheet Layout (cjcteamg1.png, 320×256)
+
+- Rows 1-2 (y=0-31): Standard outfield sprites
+- Row 3 (y=32): Jump/catch N — 3 frames in cols 0-2
+- Row 4 (y=56): Jump/catch S — 3 frames in cols 0-2
+- Row 5 (y=78): Dive E facing S — 6 frames in cols 0-5
+- Row 6 (y=104): Dive W facing S — 6 frames in cols 5-0 (right-to-left)
+- Row 7 (y=126): Dive E facing N — 6 frames in cols 0-5
+- Row 8 (y=152): Dive W facing N — 6 frames in cols 5-0 (right-to-left)

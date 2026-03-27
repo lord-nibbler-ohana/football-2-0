@@ -11,6 +11,8 @@ enum State {
 	KNOCKED_DOWN,
 	GETTING_UP,
 	THROWING_IN,
+	GK_CATCHING,
+	GK_DIVING,
 }
 
 ## 8-way direction names (5 unique + 3 mirrored).
@@ -25,13 +27,16 @@ const RUN_THRESHOLD := 0.5
 const KICK_DURATION := 6
 const SLIDE_DURATION := 12
 const CELEBRATE_DURATION := 50
-const KNOCKDOWN_DURATION := 25
-const GETUP_DURATION := 10
+const KNOCKDOWN_DURATION := 130  ## ~2.6s at 50 Hz — player lies on ground
+const GETUP_DURATION := 20  ## ~0.4s — getting up animation (total ~3s down)
 const THROWIN_DURATION := 9
+const GK_CATCH_DURATION := 9
+const GK_DIVE_DURATION := 18
 
 var state: State = State.IDLE
 var direction: Direction = Direction.S
 var _oneshot_timer: int = 0
+var _gk_dive_direction: Direction = Direction.E
 
 
 ## Update animation state based on velocity and return the result.
@@ -96,6 +101,13 @@ func get_animation_result() -> Dictionary:
 			var ti := _resolve_throwin_direction(direction)
 			anim_name = "throwin_" + ti["name"]
 			flip_h = ti["flip"]
+		State.GK_CATCHING:
+			var catch_dir := "n" if direction in [Direction.N, Direction.NE, Direction.NW] else "s"
+			anim_name = "gk_catch_" + catch_dir
+			flip_h = false
+		State.GK_DIVING:
+			anim_name = _resolve_gk_dive_name(_gk_dive_direction, direction)
+			flip_h = false
 
 	return { "animation": anim_name, "flip_h": flip_h }
 
@@ -130,10 +142,24 @@ func trigger_getup() -> void:
 	_oneshot_timer = GETUP_DURATION
 
 
+## Trigger GK catch animation (one-shot).
+func trigger_gk_catch() -> void:
+	state = State.GK_CATCHING
+	_oneshot_timer = GK_CATCH_DURATION
+
+
+## Trigger GK dive animation (one-shot).
+## dive_dir: the direction the GK dives toward (E or W).
+func trigger_gk_dive(dive_dir: Direction) -> void:
+	state = State.GK_DIVING
+	_gk_dive_direction = dive_dir
+	_oneshot_timer = GK_DIVE_DURATION
+
+
 ## Is the player in a one-shot animation that blocks other actions?
 func is_locked() -> bool:
 	return state in [State.KICKING, State.SLIDING, State.KNOCKED_DOWN,
-		State.GETTING_UP, State.THROWING_IN]
+		State.GETTING_UP, State.THROWING_IN, State.GK_CATCHING, State.GK_DIVING]
 
 
 ## Trigger throw-in animation (one-shot).
@@ -183,6 +209,14 @@ static func _velocity_to_direction(vel: Vector2) -> Direction:
 		Direction.W, Direction.NW, Direction.N, Direction.NE
 	]
 	return mapping[index]
+
+
+## Resolve GK dive animation name from dive direction and facing direction.
+## Dive direction determines E or W, facing direction determines N or S.
+static func _resolve_gk_dive_name(dive_dir: Direction, facing: Direction) -> String:
+	var ew := "e" if dive_dir in [Direction.E, Direction.SE, Direction.NE] else "w"
+	var ns := "n" if facing in [Direction.N, Direction.NE, Direction.NW] else "s"
+	return "gk_dive_" + ew + "_" + ns
 
 
 ## Resolve a Direction to a base direction name and flip flag.
